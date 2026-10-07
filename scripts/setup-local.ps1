@@ -60,7 +60,7 @@ SMTP_FROM=Learning Studio <noreply@example.test>
 LOCAL_MAILBOX=true
 SILICONFLOW_API_KEY=
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
-SILICONFLOW_MODEL=XingChenAGI/Xing4.0-29B
+SILICONFLOW_MODEL=Qwen/Qwen3.5-4B
 "@ | Set-Content -LiteralPath $envPath -Encoding utf8
 }
 Write-Output '本机 PostgreSQL 已就绪：127.0.0.1:54329。配置已保存，未输出任何密钥。'

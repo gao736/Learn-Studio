@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {validateUsage} from '../features/course/domain.ts';
 import type { Usage } from '../features/course/domain.ts';
-export const freeModel='XingChenAGI/Xing4.0-29B';
+export const freeModel='Qwen/Qwen3.5-4B';
 export const priceURL='https://www.siliconflow.cn/pricing';
 export type FreePrice={model:string;inputPrice:'0';outputPrice:'0';source:string;checkedAt:string;digest:string};
 export function validFreePrice(receipt:FreePrice|undefined,model:string){
@@ -69,7 +69,7 @@ export async function callCourseModel(messages:{role:string;content:string}[], s
     sent = true;
     const response = await fetch(config.url, {
       method:'POST', headers:{Authorization:`Bearer ${config.key}`,'Content-Type':'application/json'},
-      body:JSON.stringify({model:config.model,messages,response_format:{type:'json_object'},max_tokens:6000,temperature:.3}),
+      body:JSON.stringify({model:config.model,messages,response_format:{type:'json_object'},max_tokens:6000,temperature:.3,enable_thinking:false}),
       signal:AbortSignal.any([signal,AbortSignal.timeout(60000)]), redirect:'error',
     });
     if (!response.ok) {

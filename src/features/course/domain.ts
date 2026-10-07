@@ -68,8 +68,9 @@ export function validateMaterial(raw:unknown, goal:Goal, sources:string[]) : Mat
     return { id:`q${index+1}`, prompt:text(q.prompt,'问题',400), options, correctIndex:q.correctIndex, explanation:text(q.explanation,'解释',800), sourceIds:citations(q.sourceIds) };
   });
   if (new Set(questions.map(q => q.prompt)).size !== 5) throw new Error('生成的问题重复，请重新生成。');
+  const practice=Array.isArray(lesson.practice)&&lesson.practice.length<=4?lesson.practice.map((step:unknown)=>text(step,'练习步骤',800)).join('\n'):lesson.practice;
   return { title:text(data.title,'课程标题',150), scope:text(data.scope,'课程范围',600), weeklyTopics:data.weeklyTopics.map((v:unknown)=>text(v,'周主题',120)),
-    lesson:{ title:text(lesson.title,'首课标题',150), outcome:text(lesson.outcome,'学习目标',300), practice:text(lesson.practice,'练习任务',800), questions,
+    lesson:{ title:text(lesson.title,'首课标题',150), outcome:text(lesson.outcome,'学习目标',300), practice:text(practice,'练习任务',800), questions,
       sections:lesson.sections.map((s:any)=>({heading:text(s?.heading,'章节',100),body:text(s?.body,'正文',1800),sourceIds:citations(s?.sourceIds)})) } };
 }
 export function gradeLesson(questions:Question[], answers:Record<string,unknown>) {

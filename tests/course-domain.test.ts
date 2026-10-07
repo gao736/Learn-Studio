@@ -35,6 +35,13 @@ test('source boundary denies local/private URLs, credentials and unverified redi
   }
   assert.equal(safeSourceURL('https://science.nasa.gov/universe/stars/#intro'), 'https://science.nasa.gov/universe/stars/');
 });
+test('practice text accepts a short validated step list without dropping or coercing invalid steps',()=>{
+  const goal=validateGoal({topic:'天文学',days:7,startDate:'2026-10-30'});
+  const material=(practice:unknown)=>({...fixtureMaterial,lesson:{...fixtureMaterial.lesson,practice}});
+  assert.equal(validateMaterial(material([' 画出恒星诞生流程。 ','解释核聚变的作用。']),goal,['s1']).lesson.practice,'画出恒星诞生流程。\n解释核聚变的作用。');
+  assert.equal(validateMaterial(material('简单练习'),goal,['s1']).lesson.practice,'简单练习');
+  for(const invalid of [[],['','有效步骤'],[null],[{step:'不可自动转成文字'}],Array(5).fill('步骤'),['甲'.repeat(401),'乙'.repeat(401)],['甲'.repeat(801)]])assert.throws(()=>validateMaterial(material(invalid),goal,['s1']),/练习/);
+});
 test('usage estimates round up and never accept invalid billing counters', () => {
   assert.equal(estimateFen({ inputTokens:10000, outputTokens:1000 }), 2);
   assert.equal(estimateFen({ inputTokens:0, outputTokens:0 }), 0);
