@@ -75,6 +75,7 @@ export async function callCourseModel(messages:{role:string;content:string}[], s
     if (!response.ok) {
       sent = response.status >= 500;
       await response.body?.cancel();
+      if(response.status===402)throw new Error('硅基流动账户余额或欠费状态阻止调用（HTTP 402），请在控制台核对后再手动重试；课程草案已保留。');
       throw new Error(response.status === 429 ? '硅基流动请求限流，请稍后手动重试。' : `硅基流动返回错误（HTTP ${response.status}），请检查密钥、权限或稍后重试。`);
     }
     const result = JSON.parse(await readBounded(response,512000));

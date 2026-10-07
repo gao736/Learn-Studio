@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { callCourseModel,modelConfig } from '../src/server/model.ts';
 import { readSource } from '../src/features/course/generate.ts';
 import {fixtureModel,fixturePricing} from './fixtures/siliconflow.ts';
+
+test('account arrears rejection is actionable and does not retry or report uncertain billing',async t=>{
+  process.env.SILICONFLOW_API_KEY='local-boundary-fixture-not-a-real-key';
+  process.env.SILICONFLOW_BASE_URL='https://api.siliconflow.cn/v1';process.env.SILICONFLOW_MODEL=fixtureModel;
+  let modelCalls=0;
+  t.mock.method(globalThis,'fetch',async(url:any)=>{
+    if(String(url).includes('/pricing'))return new Response(fixturePricing(),{headers:{'content-type':'text/html'}});
+    modelCalls++;return new Response('{}',{status:402});
+  });
+  await assert.rejects(callCourseModel([{role:'user',content:'JSON课题'}],AbortSignal.timeout(1000)),error=>{
+    assert.match((error as Error).message,/账户余额或欠费状态.*HTTP 402.*控制台/);
+    assert.equal((error as any).unknownCharge,false);assert.equal((error as any).usage,undefined);return true;
+  });
+  assert.equal(modelCalls,1);
+});
 test('gateway billing distinguishes rejected calls from uncertain and billed malformed responses', async t => {
   process.env.SILICONFLOW_API_KEY='local-boundary-fixture-not-a-real-key';
   process.env.SILICONFLOW_BASE_URL='https://api.siliconflow.cn/v1';process.env.SILICONFLOW_MODEL=fixtureModel;
