@@ -33,12 +33,12 @@ test('M03 diagnoses, excludes helped answers, remediates with new questions, unl
     await page.getByRole('button',{name:'查看答案 / 评分依据',exact:true}).first().click();await expect(page.getByRole('status')).toContainText('不计独立证据');await page.reload();await expect(page.getByRole('status')).toContainText('不计独立证据');
     for(const [family,choice] of [['energy','1'],['identity','0'],['reflection','2'],['satellite','1'],['orbit','0']])await page.locator(`input[name="light-${family}-1"][value="${choice}"]`).check();
     await admin.query('REVOKE UPDATE ON assessment_sessions FROM learning_app');
-    try{await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.locator('.quiz-form [role="alert"]')).toContainText('暂时无法保存');expect(await page.locator('input:checked').count()).toBe(5);}
+    try{await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.locator('.quiz-form [role="alert"]')).toContainText('暂时无法保存');await expect(page.locator('.quiz-form [role="alert"]')).toBeFocused();expect(await page.locator('input:checked').count()).toBe(5);}
     finally{await admin.query('GRANT UPDATE ON assessment_sessions TO learning_app');}
     await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.getByRole('heading',{name:'结果已保存'})).toBeVisible();await expect(page.getByText('证据尚未达标',{exact:true})).toBeVisible();
     await page.getByRole('link',{name:'返回当前技能补习'}).click();await expect(page.getByRole('heading',{name:'针对性补习'})).toBeVisible();
     await page.getByRole('button',{name:'独立考核 / 新题补测'}).click();
-    for(const [family,choice] of [['energy','1'],['identity','0'],['reflection','2'],['satellite','1'],['orbit','0']])await page.locator(`input[name="light-${family}-2"][value="${choice}"]`).check();
+    for(const [family,choice] of [['energy','0'],['identity','2'],['reflection','0'],['satellite','0'],['orbit','1']])await page.locator(`input[name="light-${family}-2"][value="${choice}"]`).check();
     await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.getByText('达到初始通过门槛',{exact:true})).toBeVisible();await page.reload();await expect(page.getByText('达到初始通过门槛',{exact:true})).toBeVisible();
     await page.goto('/assessments/astronomy/life');await expect(page.getByRole('heading',{name:'理解恒星的一生',exact:true})).toBeVisible();
     await page.getByRole('button',{name:'跳级测验'}).click();

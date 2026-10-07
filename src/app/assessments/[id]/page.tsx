@@ -7,7 +7,7 @@ import {StartForm} from '@/features/assessment/AssessmentForms';
 export default async function Path({params}:{params:Promise<{id:string}>}){
   const user=await requireUser(),{id}=await params;const pack=await getPack(user.id,id);if(!pack)notFound();
   const [progress,history]=await Promise.all([getProgress(user.id,id),assessmentHistory(user.id,id)]);
-  return <AppShell user={user} active="/assessments"><Link className="text-link" href="/assessments">← 能力诊断</Link><header className="page-heading"><h1>{pack.spec.title}</h1><p>题库版本 {pack.spec.version} · {pack.provenance==='curated'?'有来源预置示例':'真实课程的人工核对题库'}</p></header>
+  return <AppShell user={user} active="/assessments"><Link className="text-link" href="/assessments">← 能力诊断</Link><header className="page-heading"><h1>{pack.spec.title}</h1><p>题库版本 {pack.spec.version} · {pack.provenance==='curated'?'有来源预置示例':pack.status==='approved'?'真实课程的人工核对题库':'真实课程，题库待人工核对'}</p></header>
     {pack.status!=='approved'?<section className="card"><h2>题库尚未审核</h2><p>需要核对题族、评分依据、前置关系，并补充独立诊断与补测新题。审核前不估计掌握程度，也不开放考核解锁。</p><p className="note">原课练习和模拟成绩不能直接刷出通过。申请已保存，可离开后再回来查看。</p></section>:<div className="assessment-skills">{pack.spec.skills.map((skill,index)=>{
       const p=progress[skill.id],open=skill.prerequisites.every(s=>progress[s]?.passed);
       return <section className="card" key={skill.id}><p className="card-label">技能 {index+1}</p><h2>{skill.title}</h2><p className="status-badge" data-passed={p.passed}>{p.passed?'通过':p.pending?'等待评分复核':p.practiceMissing?'需要实操验证':open?'可学习与补习':'前置尚未通过'}</p>

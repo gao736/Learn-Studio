@@ -25,6 +25,15 @@ test('fresh assessment selects distinct families and rejects reuse across reorde
   const next=pickQuestions(pack,'light',first.map(questionKey));
   assert.equal(next.length,5);assert.ok(next.every(q=>!first.some(old=>questionKey(old)===questionKey(q))));
   assert.equal(questionKey({...first[0],options:[...first[0].options!].reverse()}),questionKey(first[0]));
+  assert.equal(questionKey({...first[0],options:['新干扰项','内部核聚变','另外的干扰项']}),questionKey(first[0]));
+});
+test('copying exposed first-round answer positions cannot pass either retest round',()=>{
+  const oldPositions=[1,0,2,1,0];
+  for(const round of [2,3]){
+    const qs=astronomyPack.questions.filter(q=>q.skill==='light'&&q.id.endsWith(`-${round}`));
+    assert.ok(qs.filter((q,i)=>q.correctIndex===oldPositions[i]).length<4);
+  }
+  assert.ok(!astronomyPack.questions.some(q=>q.prompt.includes('我们最近的一颗恒星是太阳')));
 });
 test('pack approval rejects prerequisite cycles and missing independent retest families', () => {
   const cycle=structuredClone(astronomyPack);cycle.skills[0].prerequisites=['life'];

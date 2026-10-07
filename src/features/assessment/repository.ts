@@ -7,7 +7,7 @@ import {mastery,pickQuestions,questionKey,validatePack} from './domain.ts';
 import type {Pack,Question,Evidence} from './domain.ts';
 type PackRecord={id:string;spec:Pack;status:string;provenance:string};
 type Feedback=Evidence&{id:string;prompt:string;chosen:string;explanation:string;sourceIds:string[]};
-type Progress=Record<string,ReturnType<typeof mastery>&{weak:string[]}>;
+type Progress=Record<string,ReturnType<typeof mastery>&{weak:string[];prerequisitesMissing:boolean}>;
 type Session={id:string;owner_id:string;pack_id:string;pack_version:number;skill_id:string;mode:string;state:string;questions:Question[];help:Record<string,{kind:string;text:string;at:string;events:{kind:string;at:string}[]}>;answers:Record<string,string>;feedback:Feedback[];expires_at:Date;created_at:Date};
 async function lock(c:PoolClient,user:string){await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,2))',[user]);}
 async function packIn(c:PoolClient,user:string,id:string):Promise<PackRecord|null>{
@@ -20,14 +20,21 @@ export async function listPacks(user:string){return withUserDatabase(user,async 
 async function progressIn(c:PoolClient,user:string,pack:PackRecord):Promise<Progress>{
   const sessions=(await c.query<Session>('SELECT * FROM assessment_sessions WHERE owner_id=$1 AND pack_id=$2 AND pack_version=$3 AND state=\'submitted\' ORDER BY created_at,id',[user,pack.id,pack.spec.version])).rows;
   const reviews=(await c.query('SELECT r.* FROM assessment_reviews r JOIN assessment_sessions s ON s.id=r.session_id WHERE s.owner_id=$1 AND s.pack_id=$2 AND s.pack_version=$3',[user,pack.id,pack.spec.version])).rows;
-  return Object.fromEntries(pack.spec.skills.map(skill=>{
+  const progress:Progress=Object.fromEntries(pack.spec.skills.map(skill=>{
     const evidence=sessions.filter(s=>s.skill_id===skill.id).flatMap(s=>s.feedback.map(e=>{
       const review=reviews.find(r=>r.session_id===s.id&&r.question_id===e.id);
       return {...e,pending:review?review.status==='pending':e.pending,correct:review?.status==='resolved'?review.correct:e.correct};
     }));
     const latest=[...new Map(evidence.map(e=>[e.family,e])).values()];
-    return [skill.id,{...mastery(evidence,skill.requiresPractice),weak:latest.filter(e=>!e.correct||!e.independent||e.pending).map(e=>e.family)}];
+    return [skill.id,{...mastery(evidence,skill.requiresPractice),weak:latest.filter(e=>!e.correct||!e.independent||e.pending).map(e=>e.family),prerequisitesMissing:false}];
   }));
+  const resolved=new Set<string>();
+  function resolve(id:string):boolean{
+    const p=progress[id];if(resolved.has(id))return p.passed;
+    p.prerequisitesMissing=!pack.spec.skills.find(s=>s.id===id)!.prerequisites.every(resolve);
+    p.passed=p.passed&&!p.prerequisitesMissing;resolved.add(id);return p.passed;
+  }
+  pack.spec.skills.forEach(s=>resolve(s.id));return progress;
 }
 export async function getProgress(user:string,id:string):Promise<Progress>{return withUserDatabase(user,async c=>{const p=await packIn(c,user,id);return p?progressIn(c,user,p):{};});}
 export async function assessmentHistory(user:string,id:string){return withUserDatabase(user,async c=>(await c.query("SELECT id,skill_id,mode,state,created_at FROM assessment_sessions WHERE owner_id=$1 AND pack_id=$2 ORDER BY created_at DESC LIMIT 20",[user,id])).rows);}
@@ -50,6 +57,8 @@ export async function startAssessment(user:string,id:string,skill:string,mode:st
     const active=(await c.query<Session>("SELECT * FROM assessment_sessions WHERE owner_id=$1 AND pack_id=$2 AND pack_version=$3 AND skill_id=$4 AND state='active'",[user,id,pack.spec.version,skill])).rows[0];
     if(active)return active;
     const used=(await c.query<{questions:Question[]}>('SELECT questions FROM assessment_sessions WHERE owner_id=$1',[user])).rows.flatMap(s=>s.questions.map(questionKey));
+    const oldFeedback=(await c.query<{feedback:{prompt:string}[]}>('SELECT feedback FROM lesson_attempts WHERE owner_id=$1',[user])).rows;
+    used.push(...oldFeedback.flatMap(s=>s.feedback.map(q=>questionKey(q as Question))));
     const questions=pickQuestions(pack.spec,skill,used);
     if(questions.length!==5)throw new Error('考核新题不足五个不同题族，需补充题库；反复提交旧题不会增加证据。');
     return (await c.query<Session>('INSERT INTO assessment_sessions(id,owner_id,pack_id,pack_version,skill_id,mode,questions) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[randomUUID(),user,id,pack.spec.version,skill,mode,JSON.stringify(questions)])).rows[0];
@@ -147,7 +156,8 @@ export async function publishPack(user:string,id:string,raw:unknown,rationale:st
     if(!row||row.owner_id===user)throw new Error('复核不能批准自己的题库或不存在的题库。');
     if(row.status==='approved')return;
     const spec=validatePack(raw);
-    if(spec.questions.some(q=>row.blocked_keys.includes(questionKey(q))))throw new Error('考核原课练习不能重新充当独立新题，请补充诊断与补测题。');
+    const blocked=new Set([...row.blocked_keys,...row.spec.questions.map(questionKey)]);
+    if(spec.questions.some(q=>blocked.has(questionKey(q))))throw new Error('考核原课练习不能重新充当独立新题，请补充诊断与补测题。');
     await c.query("UPDATE assessment_packs SET spec=$2,status='approved',reviewer_id=$3,rationale=$4,approved_at=now() WHERE id=$1",[id,JSON.stringify(spec),user,rationale.trim()]);
   });
 }

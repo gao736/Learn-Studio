@@ -13,7 +13,7 @@ export function mastery(evidence:Evidence[],requiresPractice:boolean) {
   return {estimate,families:recent.length,correct,pending,passed:recent.length===5&&estimate>=.8&&!pending&&!requiresPractice,practiceMissing:requiresPractice};
 }
 export function questionKey(q:Question) {
-  return createHash('sha256').update(JSON.stringify([q.prompt.trim().replace(/\s+/g,' ').toLowerCase(),[...(q.options||[])].sort()])).digest('hex');
+  return createHash('sha256').update(q.prompt.normalize('NFKC').replace(/\s+/g,'').toLowerCase()).digest('hex');
 }
 export function pickQuestions(pack:Pack,skill:string,used:string[]):Question[] {
   const taken=new Set(used), families=new Set<string>();
