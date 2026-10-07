@@ -4,6 +4,7 @@ import { requireUser } from '@/server/session';
 import { AppShell } from '@/components/AppShell';
 import { getCourse } from '@/features/course/repository';
 import { GenerateControl,SourceForm } from '@/features/course/CourseForms';
+import { CandidateForm } from '@/features/assessment/AssessmentForms';
 export default async function CoursePage({params}:{params:Promise<{id:string}>}) {
   const user = await requireUser(), {id} = await params;
   const course = await getCourse(user.id,id); if (!course) notFound();
@@ -18,6 +19,7 @@ export default async function CoursePage({params}:{params:Promise<{id:string}>})
       {['draft','failed'].includes(course.status) && <SourceForm courseId={id} sourceUrls={course.goal.sourceUrls}/>}<p className="note">每次生成最多预占0.10元；调用限额与预算同时生效。只有保存完成的内容才显示可学习。</p>
       {course.accounted_fen != null && <p className="note">最近一次调用：{course.billing_status === 'unknown' ? '费用待核对，按预占上限计入预算' : course.billing_status === 'simulation' ? '模拟，未调用模型' : '本地保守估算'} · ¥{(course.accounted_fen/100).toFixed(2)}</p>}
     </section><section className="card"><span className="card-label">时间如何安排</span><h2>新内容、实践、复习</h2><p className="muted">初始约50% / 30% / 20%。同一天已有主题占用的分钟先扣除；每个日期都有明确上限。</p><p className="note">复习栏目前只是时间预留；自动间隔复习在 M04 开放。首课答题记录不代表完整掌握；正式解锁在 M03 开放。</p>{course.sources.map(source=><p key={source.id}><a className="text-link" href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a></p>)}</section></div>
+    {course.status==='ready'&&course.provenance==='real'&&<section className="card assessment-history"><h2>建立独立诊断与考核</h2><p>原课练习不作为解锁证据。新题的题族、前置关系、评分依据与补测内容经人工核对后，才能开放诊断和解锁。</p><CandidateForm courseId={id}/></section>}
     <section className="plan-section"><p className="eyebrow">MONTH / WEEK / DAY</p><h2>月、周、日计划</h2><p className="muted">未来日期为课程骨架，尚未生成正文。只有第一课开放学习。</p>
     {months.map(month=><details className="month-plan card" key={month} open><summary>{month}</summary>{[...new Set(course.schedule.filter(d=>d.month===month).map(d=>d.week))].map(week=><section key={week} className="week-plan"><h3>第 {week} 周 · {course.schedule.find(d=>d.week===week)!.focus}</h3><div className="day-list">{course.schedule.filter(d=>d.month===month&&d.week===week).map(day=><div key={day.date} className="day-row"><div><strong>{day.date}</strong><p className="note">第{day.day}天 · {day.day===1&&course.status==='ready' ? '第一课可学习' : '计划骨架'}</p></div><p>新内容 {day.learn}分钟 · 实践 {day.practice}分钟 · 复习预留 {day.review}分钟</p><span className="pill">合计 {day.learn+day.practice+day.review}分钟</span></div>)}</div></section>)}</details>)}
     </section>

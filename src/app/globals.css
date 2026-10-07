@@ -631,13 +631,20 @@ legend {
     padding:20px
   }
   .nav {
-    flex-direction:row;
+    display:grid;
+    grid-auto-flow:column;
+    grid-auto-columns:minmax(0,1fr);
     margin-top:20px;
     gap:8px
   }
   .nav a {
-    padding:8px 14px;
-    min-height:44px
+    flex-direction:column;
+    justify-content:center;
+    gap:4px;
+    padding:6px 2px;
+    min-height:64px;
+    white-space:nowrap;
+    font-size:14px
   }
   .nav svg {
     width:18px;
@@ -755,6 +762,20 @@ legend {
 .day-row .note { margin-top:4px; }
 .lesson-body { white-space:pre-wrap; overflow-wrap:anywhere; }
 textarea:focus-visible, summary:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
+select:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
+.assessment-skills { display:grid; gap:24px; }
+.assessment-actions,.assessment-help { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0; }
+.assessment-help button { background:none; border:0; padding:6px 0; font:inherit; text-align:left; }
+.assessment-form fieldset { border:0; padding:0; margin:0; min-width:0; }
+.assessment-form .button { margin-top:12px; }
+.assessment-form select,.quiz-form textarea { width:100%; min-height:48px; padding:10px 14px; font:inherit; color:var(--text); background:var(--surface); border:1px solid #64748b; border-radius:var(--radius); }
+.assessment-history,.review-card { margin-top:24px; }
+.assessment-skills .note,.review-card { overflow-wrap:anywhere; }
+.assessment-skills h2,.question legend { overflow-wrap:anywhere; }
+.assessment-skills [data-passed="false"]::before { background:var(--amber); }
+.assessment-outcome { font-size:24px; font-weight:650; }
+.feedback { margin-top:24px; }
+.feedback h2 { font-size:20px; }
 @media(max-width:767px) {
   .form-grid,.course-list { grid-template-columns:1fr; gap:16px; }
   .day-row { grid-template-columns:1fr; gap:8px; }
