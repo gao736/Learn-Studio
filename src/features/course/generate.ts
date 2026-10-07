@@ -18,8 +18,10 @@ export async function readSource(url:string, signal:AbortSignal) {
       await response.body?.cancel(); throw new Error('资料页面无法读取，首轮仅支持公开HTML/TXT页面。');
     }
     const raw = await readBounded(response,1000000);
-    // ponytail: plain text only, no HTML execution; JS-only pages require another source.
-    const plain = raw.replace(/<(script|style|noscript|svg|form)\b[^>]*>[\s\S]*?<\/\1>/gi,' ').replace(/<!--[^]*?-->/g,' ').replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|amp|quot|lt|gt);/g, entity => ({'&nbsp;':' ','&amp;':'&','&quot;':'"','&lt;':'<','&gt;':'>'}[entity]!)).replace(/\s+/g,' ').trim();
+    // ponytail: prefer semantic main/article text, no HTML execution; JS-only pages require another source.
+    const clean = raw.replace(/<(script|style|noscript|svg|form)\b[^>]*>[\s\S]*?<\/\1>/gi,' ').replace(/<!--[^]*?-->/g,' ');
+    const content = clean.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? clean.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] ?? clean;
+    const plain = content.replace(/<(nav|aside|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gi,' ').replace(/<[^>]*>/g,' ').replace(/&(?:nbsp|amp|quot|lt|gt);/g, entity => ({'&nbsp;':' ','&amp;':'&','&quot;':'"','&lt;':'<','&gt;':'>'}[entity]!)).replace(/\s+/g,' ').trim();
     if (plain.length < 200) throw new Error('资料正文不足，请换用内容完整的公开资料。');
     return {url:target,text:plain.slice(0,6000),digest:createHash('sha256').update(plain).digest('hex')};
   }

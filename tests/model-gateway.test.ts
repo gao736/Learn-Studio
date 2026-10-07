@@ -22,3 +22,15 @@ test('source reader rejects untrusted redirects and strips executable HTML befor
   const source=await readSource('https://science.nasa.gov/universe/stars/',AbortSignal.timeout(1000));
   assert.ok(source.text.includes('太阳是恒星'));assert.ok(!source.text.includes('stealSecret'));assert.equal(source.digest.length,64);
 });
+test('source reader keeps lesson text ahead of long navigation in main or article pages', async t => {
+  const replacement=t.mock.method(globalThis,'fetch');
+  const body='Stars are giant balls of hot gas. Hydrogen fusion powers their light. '.repeat(8);
+  for (const tag of ['main','article']) {
+    const html=`<script>const fake="<main>untrusted script</main>";</script><nav>${'irrelevant menu '.repeat(600)}</nav><${tag}><aside>${'irrelevant menu '.repeat(600)}</aside><h1>Star basics</h1><p>${body}</p></${tag}><footer>irrelevant footer</footer>`;
+    replacement.mock.mockImplementation(async()=>new Response(html,{headers:{'content-type':'text/html'}}));
+    const source=await readSource('https://science.nasa.gov/universe/stars/',AbortSignal.timeout(1000));
+    assert.ok(source.text.startsWith('Star basics Stars are giant balls of hot gas.'));
+    assert.ok(!source.text.includes('irrelevant') && !source.text.includes('untrusted script'));
+    assert.ok(source.text.length <= 6000);
+  }
+});

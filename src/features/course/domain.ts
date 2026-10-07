@@ -3,7 +3,7 @@ export type DaySlot = { date:string; month:string; week:number; day:number; focu
 export type Question = { id:string; prompt:string; options:string[]; correctIndex:number; explanation:string; sourceIds:string[] };
 export type Material = { title:string; scope:string; weeklyTopics:string[]; lesson:{ title:string; outcome:string; sections:{heading:string; body:string; sourceIds:string[]}[]; practice:string; questions:Question[] } };
 export type Usage = { inputTokens:number; outputTokens:number };
-export const sourceHosts = ['science.nasa.gov','docs.python.org','developer.mozilla.org','openstax.org','ocw.mit.edu','en.wikipedia.org','zh.wikipedia.org','learn.microsoft.com','help.aliyun.com','docs.langchain.com','viva.pressbooks.pub','www.fiba.basketball','www.fide.com'];
+export const sourceHosts = ['science.nasa.gov','docs.python.org','developer.mozilla.org','openstax.org','ocw.mit.edu','en.wikipedia.org','zh.wikipedia.org','learn.microsoft.com','help.aliyun.com','docs.langchain.com','viva.pressbooks.pub','openmusictheory.github.io','www.fiba.basketball','www.fide.com'];
 export const todayInShanghai = () => new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
 export const validId = (id:string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 function text(value:unknown, label:string, max:number) {
@@ -21,7 +21,7 @@ export function defaultSources(topic:string):string[] {
   if (/天文|宇宙|astronomy/i.test(topic)) return ['https://science.nasa.gov/universe/stars/'];
   if (/python/i.test(topic)) return ['https://docs.python.org/3/tutorial/introduction.html'];
   if (/javascript|编程/i.test(topic)) return ['https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/What_is_JavaScript'];
-  if (/音乐|乐理/i.test(topic)) return ['https://viva.pressbooks.pub/openmusictheory/chapter/pitches/'];
+  if (/音乐|乐理/i.test(topic)) return ['https://openmusictheory.github.io/basicNotation.html'];
   if (/经济/i.test(topic)) return ['https://openstax.org/books/principles-economics-3e/pages/1-introduction'];
   if (/ai|人工智能|agent|rag|langgraph/i.test(topic)) return ['https://docs.langchain.com/oss/python/langgraph/overview'];
   return [];

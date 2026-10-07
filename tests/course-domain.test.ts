@@ -6,6 +6,7 @@ import { fixtureMaterial } from './fixtures/course.ts';
 test('a topic alone defaults to 30 days and 30 minutes, invalid duration is rejected', () => {
   const goal = validateGoal({ topic: '天文学', startDate: '2026-10-30' });
   assert.equal(goal.days, 30); assert.equal(goal.dailyMinutes, 30);
+  assert.deepEqual(validateGoal({topic:'音乐理论'}).sourceUrls, ['https://openmusictheory.github.io/basicNotation.html']);
   for (const days of [0, -1, 1.5, 366, '30x']) assert.throws(() => validateGoal({ ...goal, days }));
   assert.throws(() => validateGoal({ ...goal, topic: ' ', dailyMinutes: 300 }));
   assert.throws(() => validateGoal({ ...goal, startDate: '2026-02-30' }));
