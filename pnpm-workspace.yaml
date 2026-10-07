@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - pg-boss@12.37.0

@@ -11,13 +11,15 @@
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "db:migrate": "node --env-file=.env.local scripts/migrate.ts",
-    "mail:local": "node --env-file=.env.local scripts/local-mail.ts"
+    "mail:local": "node --env-file=.env.local scripts/local-mail.ts",
+    "worker": "node --env-file=.env.local scripts/worker.ts"
   },
   "dependencies": {
     "better-auth": "1.7.7",
     "next": "16.3.8",
     "nodemailer": "10.0.14",
     "pg": "8.16.3",
+    "pg-boss": "12.37.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

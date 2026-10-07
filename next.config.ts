@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   poweredByHeader: false,
   devIndicators: false,
-  serverExternalPackages: ['pg', 'nodemailer'],
+  serverExternalPackages: ['pg', 'nodemailer','pg-boss'],
   async headers() {
     return [{ source: '/:path*', headers: [
       { key: 'X-Content-Type-Options', value: 'nosniff' },

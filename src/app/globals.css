@@ -729,3 +729,34 @@ legend {
     transition:none!important
   }
 }
+
+/* Custom courses share the M01 reading and form primitives. */
+.goal-form label { display:block; margin:20px 0 8px; font-weight:600; }
+.goal-form input:not([type=hidden]), .goal-form textarea { width:100%; min-height:48px; padding:10px 14px; font:inherit; color:var(--text); background:white; border:1px solid #64748b; border-radius:var(--radius); }
+.goal-form textarea { resize:vertical; }
+.goal-fields { margin:0; }
+.goal-form > .button { margin-top:24px; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.goal-form details p { overflow-wrap:anywhere; }
+.scope-preview { margin-top:24px; }
+.scope-preview h2 { font-size:20px; }
+.scope-preview p:last-child { margin-bottom:0; }
+.source-editor { margin:20px 0; }
+.course-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.course-list h2 { margin-top:20px; overflow-wrap:anywhere; }
+.plan-section { margin-top:40px; }
+.month-plan { margin:20px 0; }
+.month-plan summary { cursor:pointer; min-height:44px; font-size:22px; font-weight:650; }
+.week-plan { margin-top:24px; }
+.week-plan h3 { overflow-wrap:anywhere; }
+.day-row { display:grid; grid-template-columns:150px minmax(0,1fr) auto; align-items:center; gap:16px; padding:16px 0; border-top:1px solid var(--line); }
+.day-row p { margin-bottom:0; }
+.day-row > p { font-size:14px; color:var(--muted); }
+.day-row .note { margin-top:4px; }
+.lesson-body { white-space:pre-wrap; overflow-wrap:anywhere; }
+textarea:focus-visible, summary:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
+@media(max-width:767px) {
+  .form-grid,.course-list { grid-template-columns:1fr; gap:16px; }
+  .day-row { grid-template-columns:1fr; gap:8px; }
+  .day-row .pill { justify-self:start; }
+}
