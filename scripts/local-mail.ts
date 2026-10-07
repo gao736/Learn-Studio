@@ -2,6 +2,7 @@ import { SMTPServer } from 'smtp-server';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import {isTestEmail} from '../src/features/auth/domain.ts';
 
 if (process.env.LOCAL_MAILBOX !== 'true' || process.env.SMTP_HOST !== '127.0.0.1') {
   throw new Error('本机收件箱只允许显式开启并使用 127.0.0.1。');
@@ -11,7 +12,7 @@ await mkdir(directory, { recursive: true });
 const server = new SMTPServer({
   authOptional: true, disabledCommands: ['AUTH', 'STARTTLS'], size: 1024 * 1024,
   onRcptTo(address, _session, callback) {
-    callback(/@example\.test$/i.test(address.address) ? undefined : new Error('本机仅接收 example.test 测试地址'));
+    callback(isTestEmail(address.address) ? undefined : new Error('本机仅接收 example.test 测试地址'));
   },
   onData(stream, session, callback) {
     const chunks: Buffer[] = [];

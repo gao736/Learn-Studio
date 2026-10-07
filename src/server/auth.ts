@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer';
 import { pool } from './db.ts';
 
 const baseURL = process.env.BETTER_AUTH_URL || 'http://127.0.0.1:3000';
-const localMail = process.env.LOCAL_MAILBOX === 'true';
+export const localMail = process.env.LOCAL_MAILBOX === 'true';
 if (localMail && (new URL(baseURL).hostname !== '127.0.0.1' || process.env.SMTP_HOST !== '127.0.0.1')) {
   throw new Error('本机测试邮件配置不能用于公开网站。');
 }

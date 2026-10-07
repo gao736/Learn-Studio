@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
+import {isTestEmail} from '../src/features/auth/domain.ts';
 const email = process.argv[2]?.trim().toLowerCase();
-if (!email || !/@example\.test$/.test(email)) throw new Error('用法：node scripts/read-mail.ts yourname@example.test');
+if (!isTestEmail(email)) throw new Error('用法：node scripts/read-mail.ts yourname@example.test');
 const files = (await readdir('.runtime/mail')).sort().reverse();
 for (const file of files) {
   const mail = JSON.parse(await readFile(`.runtime/mail/${file}`, 'utf8'));

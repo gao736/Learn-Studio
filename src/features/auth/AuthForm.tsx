@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { authClient } from './client';
+import { isTestEmail, localEmailMessage } from './domain';
 
 type Mode = 'register' | 'login' | 'forgot' | 'reset';
 const labels = {
@@ -16,6 +17,8 @@ export function AuthForm({ mode, localMail, token }: { mode: Mode; localMail: bo
   const [success, setSuccess] = useState('');
   const [email, setEmail] = useState('');
   const [needsVerification, setNeedsVerification] = useState(false);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setPending(true); setError(''); setSuccess(''); setNeedsVerification(false);
     const data = new FormData(event.currentTarget);
@@ -23,6 +26,9 @@ export function AuthForm({ mode, localMail, token }: { mode: Mode; localMail: bo
     const password = String(data.get('password') || '');
     setEmail(emailValue);
     try {
+      if (localMail && (mode === 'register' || mode === 'forgot') && !isTestEmail(emailValue)) {
+        setError(localEmailMessage); return;
+      }
       const response = mode === 'register'
         ? await authClient.signUp.email({ name: String(data.get('name') || '').trim(), email: emailValue, password, callbackURL: '/today' })
         : mode === 'login'
@@ -32,8 +38,10 @@ export function AuthForm({ mode, localMail, token }: { mode: Mode; localMail: bo
             : await authClient.resetPassword({ newPassword: password, token: token || '' });
       if (response.error) {
         const code = response.error.code;
-        setNeedsVerification(mode === 'login' && code === 'EMAIL_NOT_VERIFIED');
-        setError(code === 'EMAIL_NOT_VERIFIED' ? '请先完成邮箱验证，再登录。'
+        const unsupported = localMail && !isTestEmail(emailValue) && code === 'EMAIL_NOT_VERIFIED';
+        setNeedsVerification(mode === 'login' && code === 'EMAIL_NOT_VERIFIED' && !unsupported);
+        setError(unsupported || code === 'LOCAL_TEST_EMAIL_REQUIRED' ? localEmailMessage
+          : code === 'EMAIL_NOT_VERIFIED' ? '请先完成邮箱验证，再登录。'
           : code === 'INVALID_EMAIL_OR_PASSWORD' ? '邮箱或密码不正确，请检查后重试。'
           : code?.includes('USER_ALREADY_EXISTS') ? '此邮箱已注册，可以登录或找回密码。'
           : response.error.status === 429 ? '请求较频繁，请稍后再试。'
@@ -51,8 +59,10 @@ export function AuthForm({ mode, localMail, token }: { mode: Mode; localMail: bo
     if (!email || pending) return;
     setPending(true); setError('');
     try {
+      if (localMail && !isTestEmail(email)) { setError(localEmailMessage); return; }
       const result = await authClient.sendVerificationEmail({ email, callbackURL: '/today' });
-      if (result.error) setError('邮件暂时无法发送，请稍后重试。');
+      if (result.error) setError(result.error.code === 'LOCAL_TEST_EMAIL_REQUIRED' ? localEmailMessage
+        : result.error.status === 429 ? '请求较频繁，请稍后再试。' : '邮件暂时无法发送，请稍后重试。');
       else setSuccess('验证邮件请求已受理，请检查邮箱。');
     } catch { setError('连接暂时不可用，请稍后重试。'); }
     finally { setPending(false); }
@@ -60,17 +70,17 @@ export function AuthForm({ mode, localMail, token }: { mode: Mode; localMail: bo
   const [title, description, button] = labels[mode];
   return <section className="auth-form" aria-labelledby="auth-title">
     <h2 id="auth-title">{title}</h2><p className="muted">{description}</p>
-    {error && <div className="alert" role="alert">{error}</div>}
+    {localMail && mode !== 'reset' && <p className="auth-note" id="email-help">本机测试模式仅接收 @example.test 邮箱，邮件不会发到互联网。请按 README 中的命令读取验证链接。</p>}
+    {error && <div className="alert" role="alert" tabIndex={-1} ref={errorRef}>{error}</div>}
     {success && <div className="alert success" role="status">{success}{mode === 'register' && <p className="note" style={{ margin: '8px 0 0' }}>验证后就可以开始学习。请打开邮件中的链接。</p>}</div>}
     {(!success || mode === 'login') && <form onSubmit={submit}>
       {mode === 'register' && <><label className="field" htmlFor="name">称呼</label><input id="name" name="name" autoComplete="name" required minLength={1} maxLength={80} /></>}
-      {mode !== 'reset' && <><label className="field" htmlFor="email">邮箱</label><input id="email" name="email" type="email" autoComplete="email" required maxLength={254} placeholder={localMail ? 'yourname@example.test' : 'name@example.com'} /></>}
+      {mode !== 'reset' && <><label className="field" htmlFor="email">邮箱</label><input id="email" name="email" type="email" autoComplete="email" required maxLength={254} aria-describedby={localMail ? 'email-help' : undefined} placeholder={localMail ? 'yourname@example.test' : 'name@example.com'} /></>}
       {mode !== 'forgot' && <><label className="field" htmlFor="password">密码</label><input id="password" name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={12} maxLength={128} aria-describedby="password-help" /><p className="note" id="password-help" style={{ margin: '8px 0 0' }}>至少 12 个字符，可使用一段容易记住的短句。</p></>}
       <button className="button" disabled={pending || (mode === 'reset' && !token)}>{pending ? '正在提交…' : button}</button>
       {mode === 'reset' && !token && <p className="alert">重置链接缺少凭证，请重新申请。</p>}
     </form>}
     {((mode === 'register' && success) || needsVerification) && <button className="button secondary" onClick={resend} disabled={pending}>{pending ? '正在发送…' : '重新发送验证邮件'}</button>}
     <div className="auth-links"><Link className="text-link" href={mode === 'register' ? '/login' : '/register'}>{mode === 'register' ? '已有账户，登录' : '创建账户'}</Link>{mode === 'login' ? <Link className="text-link" href="/forgot-password">忘记密码</Link> : <Link className="text-link" href="/login">返回登录</Link>}</div>
-    {localMail && <p className="auth-note">本机测试模式：请使用 example.test 邮箱。验证邮件保存在项目的 .runtime/mail，使用 README 中的命令读取；不会发到互联网。</p>}
   </section>;
 }

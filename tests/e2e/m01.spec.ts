@@ -179,3 +179,24 @@ test('protected results reject an anonymous request and registration has usable 
   await page.keyboard.press('Enter');
   await expect(page.locator('main')).toBeFocused();
 });
+
+test('local mail forms explain unsupported email recipients before making a request', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/api/auth/**', async route => { requests++; await route.abort(); });
+  for (const [route, width] of [['/register', 375], ['/forgot-password', 1440]] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(route);
+    if (route === '/register') {
+      await page.getByLabel('称呼').fill('邮件检查');
+      await page.getByLabel('密码', { exact: true }).fill(password);
+    }
+    await page.getByLabel('邮箱').fill('learner@qq.com');
+    await page.getByRole('button', { name: route === '/register' ? '创建账户' : '发送重置邮件' }).click();
+    const error = page.locator('.auth-form').getByRole('alert');
+    await expect(error).toContainText('仅支持 @example.test');
+    await expect(error).toBeFocused();
+    expect(requests).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `.runtime/auth-mail-error-${width}.png`, fullPage: true });
+  }
+});
