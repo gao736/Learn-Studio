@@ -1,6 +1,6 @@
 # Learning Studio · 多领域学习网站
 
-**M01 本机闭环已交付；M02 真实百炼验收待完成；M03 本机示例诊断与解锁已交付。** 可以创建主题、确认范围并保存月周日计划；接通真实服务后可生成第一课、答题并保存反馈。M03任意主题的真实AI课程联验仍待完成，自动复习与实操实验等M04—M24尚未开始。此目录是独立的 Next.js / TypeScript 项目，原有成果和记录保留。
+**M01、M03本机示例闭环与M04客观题间隔复习已交付；M02真实百炼验收待完成。** 可以创建主题、确认范围并保存月周日计划；接通真实服务后可生成第一课、答题并保存反馈。M03任意主题的真实AI课程联验仍待完成，M05—M24尚未开始。此目录是独立的 Next.js / TypeScript 项目，原有成果和记录保留。
 
 这是本机开发版。使用真实 PostgreSQL 和独立本机 SMTP 收件箱，邮件**不会投递到互联网**。答题记录只说明这次表现，不表示已完整掌握天文学。
 
@@ -106,6 +106,10 @@ Expand-Archive -LiteralPath .runtime/postgresql-17.11.zip -DestinationPath .runt
 
 ## 实际验收
 
+M04入口为 `/reviews`，也可从“今天”进入间隔复习。完成M01示例课或M03客观考核后，复习卡与原始结果在同一事务保存；旧记录在复习页展开“补入以前完成的练习”后同步，不重置已保存排期。真实课程首课的适配器已实现，真实百炼联验仍待完成；模拟课程和简答题不进入自动复习。有评分争议的原题暂停自动排期，需核对答案键后再补充可用题目。
+
+采用 [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) 5.4.2（MIT、FSRS-6），目标保持率90%，关闭随机扰动。先独立选择答案和回忆难度，服务端评分：错答强制重学；答对才按费力/一般/轻松排期。完整参数、算法版本、前后记忆状态、结果与FSRS日志入库。同一排期版本重复提交只保存一次；回看结果不会重排。复习不增加M03独立考核证据。未提交输入不跨刷新保存，保存失败会保留当前输入；长期效果仍待内测。
+
 先启动数据库、邮件和网站，再运行：
 
 ```powershell
@@ -122,7 +126,7 @@ M02额外验收包含范围确认、跨月计划保存、配置缺失反馈、�
 若Codex受限环境中的pnpm依赖检查提示非TTY错误，以下是同一套检查的直接Node入口，无需删除现有依赖：
 
 ```powershell
-node --test tests/*.test.ts
+node --test --test-concurrency=1 tests/*.test.ts
 node node_modules/typescript/bin/tsc --noEmit
 node node_modules/@playwright/test/cli.js test
 node node_modules/next/dist/bin/next build
@@ -134,4 +138,4 @@ node node_modules/next/dist/bin/next build
 
 交付证据、续作位置和限制见 [docs/handoff.md](docs/handoff.md)，界面约定见 [docs/design-system.md](docs/design-system.md)，模块顺序见 [docs/modules.md](docs/modules.md)，M02闭环约定见 [docs/m02-plan.md](docs/m02-plan.md)。中断后先核对记录和Git历史，从未完成检查继续，不清空学习数据或重建现有文件。
 
-互联网邮件、公开部署和真实学习效果均待验证。未来部署需配置真实 SMTP、数据库与强随机密钥，设置正确的站点地址并关闭 `LOCAL_MAILBOX`。M02真实验收仍需要用户开通百炼；本轮未调用外部模型，没有外部部署，M03不推进。
+互联网邮件、公开部署和真实学习效果均待验证。未来部署需配置真实 SMTP、数据库与强随机密钥，设置正确的站点地址并关闭 `LOCAL_MAILBOX`。M02真实验收仍需要用户开通百炼；本轮未调用外部模型，没有外部部署。按最新授权只推进M04，不自动进入M05。核心检查串行运行，因为失败恢复验收会临时调整本机数据库权限；全部恢复操作在finally中执行。

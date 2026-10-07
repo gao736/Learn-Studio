@@ -1,4 +1,4 @@
-const questions = [
+export const questions = [
   { id: 'q1', prompt: '像太阳这样的恒星，主要依靠什么持续释放能量？', options: ['反射行星的光', '内部的核聚变', '表面的普通燃烧'], correctIndex: 1, explanation: '太阳等主序恒星通过内部核聚变释放能量；普通燃烧不是其持续能量来源。' },
   { id: 'q2', prompt: '太阳属于哪一类天体？', options: ['恒星', '行星', '卫星'], correctIndex: 0, explanation: '太阳是我们最近的一颗恒星，地球等行星围绕太阳运行。' },
   { id: 'q3', prompt: '我们在夜空中看到金星的可见光，主要来自哪里？', options: ['金星上的灯光', '金星内部像太阳一样的核聚变', '金星反射的太阳光'], correctIndex: 2, explanation: '金星是行星，我们看到的明亮可见光主要是它反射的太阳光。' },

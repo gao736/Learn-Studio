@@ -12,7 +12,7 @@ export function mastery(evidence:Evidence[],requiresPractice:boolean) {
   // ponytail: observed independent family ratio, not a calibrated probability; practical verification comes from M07+.
   return {estimate,families:recent.length,correct,pending,passed:recent.length===5&&estimate>=.8&&!pending&&!requiresPractice,practiceMissing:requiresPractice};
 }
-export function questionKey(q:Question) {
+export function questionKey<T extends {prompt:string}>(q:T) {
   return createHash('sha256').update(q.prompt.normalize('NFKC').replace(/\s+/g,'').toLowerCase()).digest('hex');
 }
 export function pickQuestions(pack:Pack,skill:string,used:string[]):Question[] {

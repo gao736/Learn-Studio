@@ -4,6 +4,7 @@ const items = [
   { href: '/today', label: '今天', path: 'M3 10 12 3l9 7v10h-6v-6H9v6H3Z' },
   { href: '/lesson/astronomy', label: '课堂', path: 'M12 5c-4-3-8-2-9-1v15c3-2 6-2 9 0 3-2 6-2 9 0V4c-1-1-5-2-9 1Zm0 0v14' },
   { href: '/courses', label: '课程', path: 'M4 3h16v18H4Zm4 5h8M8 12h8M8 16h5' },
+  { href: '/reviews', label: '复习', path: 'M3 10a9 9 0 1 1 2 8M3 4v6h6M12 7v5l3 2' },
   { href: '/assessments', label: '能力诊断', path: 'M4 4h16v16H4Zm4 5 2 2 5-5M8 16h8' },
 ];
 export function AppShell({ user, active, children }: { user: { name: string; email: string }; active: string; children: React.ReactNode }) {

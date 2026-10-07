@@ -3,6 +3,7 @@ import type {PoolClient} from 'pg';
 import {withUserDatabase} from '../../server/db.ts';
 import {validId} from '../course/domain.ts';
 import {astronomyPack} from './catalog.ts';
+import {addReviewCards} from '../review/repository.ts';
 import {mastery,pickQuestions,questionKey,validatePack} from './domain.ts';
 import type {Pack,Question,Evidence} from './domain.ts';
 type PackRecord={id:string;spec:Pack;status:string;provenance:string};
@@ -99,6 +100,8 @@ export async function submitAssessment(user:string,id:string,answers:Record<stri
     });
     const row=(await c.query<Session>("UPDATE assessment_sessions SET state='submitted',answers=$2,feedback=$3,submitted_at=now() WHERE id=$1 RETURNING *",[id,JSON.stringify(saved),JSON.stringify(feedback)])).rows[0];
     for(const q of feedback.filter(q=>q.pending))await c.query('INSERT INTO assessment_reviews(id,owner_id,session_id,question_id,reason) VALUES($1,$2,$3,$4,$5)',[randomUUID(),user,id,q.id,'短答评分不确定，需要按评分依据人工核对。']);
+    const courseId=s.pack_id==='astronomy'?undefined:(await c.query('SELECT course_id FROM assessment_packs WHERE id=$1 AND owner_id=$2',[s.pack_id,user])).rows[0]?.course_id;
+    await addReviewCards(c,user,{sessionId:s.id,courseId,label:pack.spec.title,provenance:s.pack_id==='astronomy'?'curated':'real'},s.questions.filter(q=>q.type==='choice') as (Question&{options:string[];correctIndex:number})[],pack.spec.sources);
     return row;
   });
 }

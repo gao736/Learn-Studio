@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { withUserDatabase } from '../../server/db.ts';
-import { gradeAstronomyQuiz } from './quiz.ts';
+import { gradeAstronomyQuiz,questions } from './quiz.ts';
+import {addReviewCards,astronomySources} from '../review/repository.ts';
 
 export type Attempt = {
   id: string; lesson_id: string; lesson_version: string; score: number; total: number;
@@ -18,7 +19,10 @@ export async function saveAttempt(userId: string, submissionKey: string, answers
        RETURNING id, lesson_id, lesson_version, score, total, created_at, feedback`,
       [randomUUID(), userId, submissionKey, grade.score, grade.total, JSON.stringify(answers), JSON.stringify(grade.feedback)],
     );
-    return result.rows[0];
+    const attempt=result.rows[0];
+    if(attempt.lesson_id!=='astronomy'||attempt.lesson_version!=='astronomy-v1')throw new Error('提交凭证已用于其他课堂或版本，请刷新后重试。');
+    await addReviewCards(client,userId,{lessonId:attempt.id,label:'天文学 · 恒星、行星与卫星',provenance:'curated'},questions,astronomySources);
+    return attempt;
   });
 }
 export async function getAttempt(userId: string, id: string) {

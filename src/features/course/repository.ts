@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import {addReviewCards} from '../review/repository.ts';
 import type { PoolClient } from 'pg';
 import { withUserDatabase } from '../../server/db.ts';
 import { getBoss, courseQueue } from '../../server/queue.ts';
@@ -156,7 +157,9 @@ export async function saveCourseAttempt(userId:string,courseId:string,key:string
     const course = (await c.query<Course>('SELECT * FROM learning_courses WHERE id=$1 AND owner_id=$2 AND status=\'ready\'',[courseId,userId])).rows[0];
     if (!course?.material) throw new Error('课程尚未生成或无权访问。');
     const grade = gradeLesson(course.material.lesson.questions,answers);
-    const result = await c.query('INSERT INTO lesson_attempts(id,owner_id,lesson_id,lesson_version,submission_key,score,total,answers,feedback) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_id,submission_key) DO UPDATE SET submission_key=lesson_attempts.submission_key RETURNING id,score,total',[randomUUID(),userId,`course:${courseId}`,`${course.provenance}:${course.active_generation}`,key,grade.score,grade.total,JSON.stringify(answers),JSON.stringify(grade.feedback)]);
+    const result = await c.query('INSERT INTO lesson_attempts(id,owner_id,lesson_id,lesson_version,submission_key,score,total,answers,feedback) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_id,submission_key) DO UPDATE SET submission_key=lesson_attempts.submission_key RETURNING id,score,total,lesson_id,lesson_version',[randomUUID(),userId,`course:${courseId}`,`${course.provenance}:${course.active_generation}`,key,grade.score,grade.total,JSON.stringify(answers),JSON.stringify(grade.feedback)]);
+    if(result.rows[0].lesson_id!==`course:${courseId}`||result.rows[0].lesson_version!==`${course.provenance}:${course.active_generation}`)throw new Error('提交凭证已用于其他课堂或版本，请刷新后重试。');
+    if(course.provenance==='real')await addReviewCards(c,userId,{lessonId:result.rows[0].id,courseId,label:course.material.title,provenance:'real'},course.material.lesson.questions,course.sources);
     return result.rows[0];
   });
 }

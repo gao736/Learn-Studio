@@ -643,7 +643,9 @@ legend {
     gap:4px;
     padding:6px 2px;
     min-height:64px;
-    white-space:nowrap;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    text-align:center;
     font-size:14px
   }
   .nav svg {
@@ -776,8 +778,17 @@ select:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
 .assessment-outcome { font-size:24px; font-weight:650; }
 .feedback { margin-top:24px; }
 .feedback h2 { font-size:20px; }
+.review-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.status-badge.warning::before { background:var(--amber); }
+.review-history { list-style:none; padding:0; }
+.review-history li { padding:16px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.assessment-form label.option { display:flex; align-items:center; gap:12px; font-weight:400; }
+.assessment-form input[type=radio] { width:20px; min-height:20px; height:20px; flex-shrink:0; padding:0; }
+.assessment-form .question { margin-bottom:24px; }
+.assessment-form .question legend { font-size:20px; font-weight:650; margin-bottom:12px; }
+.plan-section details summary, .plan-section > summary { min-height:44px; cursor:pointer; }
 @media(max-width:767px) {
-  .form-grid,.course-list { grid-template-columns:1fr; gap:16px; }
+  .form-grid,.course-list,.review-summary { grid-template-columns:1fr; gap:16px; }
   .day-row { grid-template-columns:1fr; gap:8px; }
   .day-row .pill { justify-self:start; }
 }
