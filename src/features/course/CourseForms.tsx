@@ -28,7 +28,7 @@ export function NewCourseForm({submissionKey,startDate}:{submissionKey:string;st
       <label htmlFor="sourceUrls">公开资料链接（可选，每行一个，最多三个）</label><textarea id="sourceUrls" name="sourceUrls" rows={3} maxLength={3500} placeholder="已知主题可使用预置来源；其他主题请补充可信资料"/>
       <details><summary className="text-link">查看首轮支持的资料网站</summary><p className="note">{sourceHosts.join('、')}。仅支持公开HTTPS文字网页，私有文档上传在后续模块开放。</p></details>
     </fieldset>
-    {preview && <section className="hint-box scope-preview" aria-labelledby="scope-heading"><h2 id="scope-heading">确认这次学习范围</h2><p>{preview.topic} · {preview.days}天 · 每日总预算{preview.dailyMinutes}分钟</p><p>{preview.goal}</p><p>从零基础开始。本次生成课程骨架和第一课正文、练习与五道题；后续正文、正式考核解锁及自动复习尚未开放。</p><p className="note">主题、目标和公开资料正文将发送至百炼。单次费用预占上限0.10元；未配置时只保存草案。</p>{!preview.sourceUrls.length && <p>此主题暂无预置来源。可以先保存，再补充公开资料。</p>}</section>}
+    {preview && <section className="hint-box scope-preview" aria-labelledby="scope-heading"><h2 id="scope-heading">确认这次学习范围</h2><p>{preview.topic} · {preview.days}天 · 每日总预算{preview.dailyMinutes}分钟</p><p>{preview.goal}</p><p>从零基础开始。本次生成课程骨架和第一课正文、练习与五道题；后续正文仍是计划骨架。独立考核需另建审核题库，客观练习完成后可进入间隔复习。</p><p className="note">主题、目标和公开资料正文将发送至硅基流动。仅使用已核对的免费文本模型；核价失败会停止生成。未配置密钥时只保存草案。</p>{!preview.sourceUrls.length && <p>此主题暂无预置来源。可以先保存，再补充公开资料。</p>}</section>}
     <button className="button" disabled={pending}>{pending ? '正在保存…' : preview ? '确认范围并保存课程' : '查看学习范围'}</button>
   </form>;
 }

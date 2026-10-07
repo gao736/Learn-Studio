@@ -3,12 +3,13 @@ import {addReviewCards} from '../review/repository.ts';
 import type { PoolClient } from 'pg';
 import { withUserDatabase } from '../../server/db.ts';
 import { getBoss, courseQueue } from '../../server/queue.ts';
-import { modelConfig } from '../../server/model.ts';
-import { validateGoal, validId, buildSchedule, validateMaterial, estimateFen, gradeLesson } from './domain.ts';
+import {modelConfig,validFreePrice} from '../../server/model.ts';
+import type {FreePrice} from '../../server/model.ts';
+import { validateGoal, validId, buildSchedule, validateMaterial, validateUsage,estimateFen, gradeLesson } from './domain.ts';
 import type { Goal, DaySlot, Material, Usage } from './domain.ts';
 export type SourceReceipt = {id:string;url:string;title:string;fetchedAt:string;digest:string};
-export type Course = {id:string;submission_key:string;goal:Goal;schedule:DaySlot[];status:string;error:string;material:Material|null;sources:SourceReceipt[];provenance:string;active_generation:string|null;generation_updated_at:Date|null;billing_status:string|null;accounted_fen:number|null;attempts:number};
-const selectCourse = `SELECT c.*,g.updated_at AS generation_updated_at,g.billing_status,g.accounted_fen,
+export type Course = {id:string;submission_key:string;goal:Goal;schedule:DaySlot[];status:string;error:string;material:Material|null;sources:SourceReceipt[];provenance:string;active_generation:string|null;generation_updated_at:Date|null;billing_status:string|null;accounted_fen:number|null;model_provider:string|null;model_name:string|null;attempts:number};
+const selectCourse = `SELECT c.*,g.updated_at AS generation_updated_at,g.billing_status,g.accounted_fen,g.model_provider,g.model_name,
   (SELECT count(*)::int FROM course_generations h WHERE h.course_id=c.id) AS attempts
   FROM learning_courses c LEFT JOIN course_generations g ON g.id=c.active_generation`;
 async function lockUser(client:PoolClient, userId:string) { await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1))',[userId]); }
@@ -62,7 +63,7 @@ async function settle(c:PoolClient, generation:any, cost:number, status:string, 
 }
 export async function requestGeneration(userId:string, courseId:string) {
   if (!validId(courseId)) throw new Error('找不到这个课程。');
-  let configurationError = ''; try { modelConfig(); } catch(error) { configurationError = (error as Error).message; }
+  let configurationError='',config:ReturnType<typeof modelConfig>|undefined;try{config=modelConfig();}catch(error){configurationError=(error as Error).message;}
   // Do not start or migrate a queue when configuration is absent.
   const boss = configurationError ? null : await getBoss();
   const result = await withUserDatabase(userId,async c => {
@@ -97,7 +98,7 @@ export async function requestGeneration(userId:string, courseId:string) {
     try {
       await changeBudget(c,day,10,true);
       const id = randomUUID();
-      await c.query("INSERT INTO course_generations(id,owner_id,course_id,status,budget_day) VALUES($1,$2,$3,'queued',$4)",[id,userId,courseId,day]);
+      await c.query("INSERT INTO course_generations(id,owner_id,course_id,status,budget_day,model_provider,model_name) VALUES($1,$2,$3,'queued',$4,$5,$6)",[id,userId,courseId,day,config!.provider,config!.model]);
       await c.query("UPDATE learning_courses SET active_generation=$2,status='queued',error='' WHERE id=$1",[courseId,id]);
       const job = await boss!.send(courseQueue,{ownerId:userId,generationId:id},{ retryLimit:0,expireInSeconds:120,db:{executeSql:(sql,values)=>c.query(sql,values)} });
       if (!job) throw new Error('入队失败');
@@ -132,10 +133,10 @@ export async function beginGeneration(userId:string, generationId:string) {
     if (!row) return null;
     await c.query("UPDATE course_generations SET status='running',updated_at=now() WHERE id=$1",[generationId]);
     await c.query("UPDATE learning_courses SET status='running' WHERE id=$1",[row.course_id]);
-    return row as {course_id:string;goal:Goal;schedule:DaySlot[]};
+    return row as {course_id:string;goal:Goal;schedule:DaySlot[];model_provider:string;model_name:string};
   });
 }
-export async function finishGeneration(userId:string, generationId:string, result:{material?:unknown;sources?:SourceReceipt[];usage?:Usage;provenance?:'real'|'simulation';error?:string;unknownCharge?:boolean}) {
+export async function finishGeneration(userId:string, generationId:string, result:{material?:unknown;sources?:SourceReceipt[];usage?:Usage;pricing?:FreePrice;provenance?:'real'|'simulation';error?:string;unknownCharge?:boolean}) {
   return withUserDatabase(userId,async c => {
     await lockUser(c,userId);
     const row = (await c.query('SELECT g.*,c.goal,c.schedule FROM course_generations g JOIN learning_courses c ON c.id=g.course_id WHERE g.id=$1 AND g.owner_id=$2 AND c.active_generation=g.id FOR UPDATE OF c,g',[generationId,userId])).rows[0];
@@ -144,8 +145,19 @@ export async function finishGeneration(userId:string, generationId:string, resul
     if (!error) try { material = validateMaterial(result.material,row.goal,(result.sources || []).map(s=>s.id)); } catch(e) { error=(e as Error).message; }
     const simulated = result.provenance === 'simulation';
     let cost = simulated ? 0 : result.unknownCharge ? row.reserved_fen : 0;
-    if (result.usage && !simulated) cost = estimateFen(result.usage);
-    await settle(c,row,cost,simulated ? 'simulation' : result.unknownCharge ? 'unknown' : 'estimated',result.usage);
+    let billing=simulated?'simulation':result.unknownCharge?'unknown':'estimated';
+    if(!simulated&&row.model_provider==='siliconflow'&&!error&&(!result.usage||result.unknownCharge||!validFreePrice(result.pricing,row.model_name))){
+      cost=row.reserved_fen;billing='unknown';error='硅基流动免费调用凭据不完整，课程未发布，费用需要核对。';
+    }
+    if(result.usage&&!simulated){
+      validateUsage(result.usage);
+      if(row.model_provider==='siliconflow'){
+        if(!result.unknownCharge&&validFreePrice(result.pricing,row.model_name)){cost=0;billing='free';}
+        else{cost=row.reserved_fen;billing='unknown';error=error||'硅基流动免费价格凭据不完整，课程未发布，费用需要核对。';}
+      }else cost=estimateFen(result.usage);
+    }
+    await settle(c,row,cost,billing,result.usage);
+    if(result.pricing)await c.query('UPDATE course_generations SET pricing_receipt=$2 WHERE id=$1',[generationId,JSON.stringify(result.pricing)]);
     await c.query('UPDATE course_generations SET status=$2,updated_at=now() WHERE id=$1',[generationId,error ? 'failed' : 'completed']);
     if (error) await c.query("UPDATE learning_courses SET status='failed',error=$2 WHERE id=$1",[row.course_id,error.slice(0,600)]);
     else await c.query("UPDATE learning_courses SET status='ready',error='',material=$2,sources=$3,schedule=$4,provenance=$5 WHERE id=$1",[row.course_id,JSON.stringify(material),JSON.stringify(result.sources),JSON.stringify(row.schedule.map((day:DaySlot)=>({...day,focus:material!.weeklyTopics[day.week-1]}))),simulated ? 'simulation' : 'real']);

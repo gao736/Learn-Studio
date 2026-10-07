@@ -2,7 +2,7 @@ export type Goal = { topic:string; goal:string; days:number; dailyMinutes:number
 export type DaySlot = { date:string; month:string; week:number; day:number; focus:string; learn:number; practice:number; review:number };
 export type Question = { id:string; prompt:string; options:string[]; correctIndex:number; explanation:string; sourceIds:string[] };
 export type Material = { title:string; scope:string; weeklyTopics:string[]; lesson:{ title:string; outcome:string; sections:{heading:string; body:string; sourceIds:string[]}[]; practice:string; questions:Question[] } };
-export type Usage = { inputTokens:number; outputTokens:number };
+export type Usage = { inputTokens:number; outputTokens:number;reasoningTokens?:number };
 export const sourceHosts = ['science.nasa.gov','docs.python.org','developer.mozilla.org','openstax.org','ocw.mit.edu','en.wikipedia.org','zh.wikipedia.org','learn.microsoft.com','help.aliyun.com','docs.langchain.com','viva.pressbooks.pub','openmusictheory.github.io','www.fiba.basketball','www.fide.com'];
 export const todayInShanghai = () => new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
 export const validId = (id:string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
@@ -81,8 +81,12 @@ export function gradeLesson(questions:Question[], answers:Record<string,unknown>
   });
   return { score:feedback.filter(q => q.correct).length, total:questions.length, feedback };
 }
+export function validateUsage(usage:Usage) {
+  const reasoning=usage.reasoningTokens??0;
+  if(!Number.isInteger(reasoning)||reasoning<0||reasoning>32768||reasoning>usage.outputTokens||!Number.isInteger(usage.inputTokens)||usage.inputTokens<0||usage.inputTokens>60000||!Number.isInteger(usage.outputTokens)||usage.outputTokens<0||usage.outputTokens-reasoning>6000)throw new Error('调用用量无法确认。');
+}
 export function estimateFen(usage:Usage) {
-  if (!Number.isInteger(usage.inputTokens) || usage.inputTokens < 0 || usage.inputTokens > 60000 || !Number.isInteger(usage.outputTokens) || usage.outputTokens < 0 || usage.outputTokens > 6000) throw new Error('调用用量无法确认。');
+  validateUsage(usage);
   // Beijing list prices, 2026-10-06: input 0.8 / output 2.7 CNY per million; round up to fen.
   return Math.ceil((usage.inputTokens * 8 + usage.outputTokens * 27) / 100000);
 }

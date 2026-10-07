@@ -28,13 +28,14 @@ test('M02 saves a custom plan, reports absent provider configuration, and teache
   await page.getByLabel('开始日期').fill('2026-10-30');
   await page.getByRole('button',{name:'查看学习范围'}).click();
   await expect(page.getByRole('heading',{name:'确认这次学习范围'})).toBeVisible();
+  await expect(page.locator('.scope-preview')).toContainText('发送至硅基流动');await expect(page.locator('.scope-preview')).toContainText('免费文本模型');
   await page.getByRole('button',{name:'确认范围并保存课程'}).click();
   await expect(page.getByRole('heading',{name:'天文学',exact:true})).toBeVisible();
   const courseId = page.url().split('/').at(-1)!;
   await expect(page.getByText('2026-11',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'开始生成第一课'}).click();
-  await expect(page.locator('.course-error')).toContainText('百炼尚未配置');
-  await page.reload(); await expect(page.locator('.course-error')).toContainText('百炼尚未配置');
+  await expect(page.locator('.course-error')).toContainText('硅基流动尚未配置');
+  await page.reload(); await expect(page.locator('.course-error')).toContainText('硅基流动尚未配置');
   const privateStatus = await page.request.get(`/api/courses/${courseId}`);
   expect(privateStatus.status()).toBe(200);
   expect(JSON.stringify(await privateStatus.json())).not.toContain('correctIndex');

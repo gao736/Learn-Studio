@@ -5,7 +5,7 @@ import { requireUser } from '../../server/session.ts';
 import { createCourse,requestGeneration,updateSources,saveCourseAttempt,recordDraftFailure } from './repository.ts';
 function message(error:unknown, fallback:string) {
   // Only expected business validation messages reach public forms, never SQL/network diagnostics.
-  return error instanceof Error && /^(主题|目标|学习|每日|开始|资料|提交|日期|每天|找不到|课程|仅|百炼|模型|本课程)/.test(error.message) ? error.message : fallback;
+  return error instanceof Error && /^(主题|目标|学习|每日|开始|资料|提交|日期|每天|找不到|课程|仅|硅基流动|模型|本课程)/.test(error.message) ? error.message : fallback;
 }
 export async function createCourseAction(_previous:{error:string}, data:FormData) {
   const user = await requireUser(); let id:string;
