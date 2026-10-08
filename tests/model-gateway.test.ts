@@ -53,3 +53,25 @@ test('source reader keeps lesson text ahead of long navigation in main or articl
     assert.ok(source.text.length <= 6000);
   }
 });
+
+test('source reader recovers once from transient failures and keeps retries and cancellation bounded', async t => {
+  const url='https://science.nasa.gov/universe/stars/';
+  const html=`<article>${'Stars form from clouds of gas and dust. '.repeat(12)}</article>`;
+  let calls=0;
+  const replacement=t.mock.method(globalThis,'fetch',async()=>{
+    if(++calls===1)throw new DOMException('source timeout','TimeoutError');
+    return new Response(html,{headers:{'content-type':'text/html'}});
+  });
+  const source=await readSource(url,AbortSignal.timeout(1000));
+  assert.equal(calls,2);assert.ok(source.text.startsWith('Stars form'));
+  calls=0;
+  replacement.mock.mockImplementation(async()=>{calls++;throw new TypeError('fetch failed',{cause:{code:'ECONNRESET'}});});
+  await assert.rejects(readSource(url,AbortSignal.timeout(1000)),/资料读取.*science\.nasa\.gov.*尚未调用模型/);
+  assert.equal(calls,2);
+  calls=0;
+  replacement.mock.mockImplementation(async()=>{calls++;throw new DOMException('cancelled','AbortError');});
+  await assert.rejects(readSource(url,AbortSignal.abort()));assert.equal(calls,1);
+  calls=0;
+  replacement.mock.mockImplementation(async()=>{calls++;return new Response(null,{status:403});});
+  await assert.rejects(readSource(url,AbortSignal.timeout(1000)),/资料页面无法读取/);assert.equal(calls,1);
+});
