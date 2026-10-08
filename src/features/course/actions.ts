@@ -35,7 +35,7 @@ export async function submitCourseQuiz(_previous:{error:string}, data:FormData) 
   const user = await requireUser(); let id:string;
   try {
     const answers = Object.fromEntries(['q1','q2','q3','q4','q5'].map(key=>[key,data.get(key)]));
-    id = (await saveCourseAttempt(user.id,String(data.get('course_id')),String(data.get('submission_key')),answers)).id;
+    id = (await saveCourseAttempt(user.id,String(data.get('course_id')),String(data.get('submission_key')),answers,String(data.get('lesson_version')))).id;
   } catch(error) { return {error:message(error,'结果暂时无法保存，请重试。你的选项仍保留在页面上。')}; }
   revalidatePath('/today'); redirect(`/results/${id}`);
 }

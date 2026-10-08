@@ -3,6 +3,9 @@ import { readdir,readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fixtureMaterial } from '../fixtures/course';
 import { Pool } from 'pg';
+import {reviseCourse} from '../../src/features/course/repository';
+import {pool} from '../../src/server/db';
+test.afterAll(async()=>{await pool.end();});
 
 test('M02 saves a custom plan, reports absent provider configuration, and teaches an explicitly simulated first lesson', async ({page,browser}) => {
   const email = `m02-${Date.now()}@example.test`;
@@ -16,7 +19,7 @@ test('M02 saves a custom plan, reports absent provider configuration, and teache
   for (let retry=0; retry<40 && !verification; retry++) {
     for (const file of (await readdir('.runtime/mail')).sort().reverse()) {
       const mail = JSON.parse(await readFile(`.runtime/mail/${file}`,'utf8'));
-      if (mail.to.includes(email)) { verification=mail.text.match(/http:\/\/127\.0\.0\.1:3000\/[^\s<>]+/)[0]; break; }
+      if (mail.to.includes(email)) { verification=mail.text.match(/http:\/\/127\.0\.0\.1:\d+\/[^\s<>]+/)[0]; break; }
     }
     if (!verification) await new Promise(r=>setTimeout(r,250));
   }
@@ -39,7 +42,7 @@ test('M02 saves a custom plan, reports absent provider configuration, and teache
   const privateStatus = await page.request.get(`/api/courses/${courseId}`);
   expect(privateStatus.status()).toBe(200);
   expect(JSON.stringify(await privateStatus.json())).not.toContain('correctIndex');
-  const anonymous = await browser.newContext({baseURL:'http://127.0.0.1:3000'});
+  const anonymous = await browser.newContext({baseURL:process.env.BETTER_AUTH_URL||'http://127.0.0.1:3000'});
   expect((await anonymous.request.get(`/api/courses/${courseId}`)).status()).toBe(401);
   await anonymous.close();
 
@@ -67,8 +70,29 @@ test('M02 saves a custom plan, reports absent provider configuration, and teache
   await page.getByRole('link',{name:'学习第一课'}).click();
   await expect(page.getByText('模拟测试课程',{exact:true})).toBeVisible();
   for (const [index,choice] of [1,0,2,1,0].entries()) await page.locator(`input[name="q${index+1}"][value="${choice}"]`).check();
+  const oldVersion=(await page.locator('input[name="lesson_version"]').getAttribute('value'))!;
+  const revised=structuredClone(simulated);revised.lesson.sections.push({heading:'修订补充讲解',body:'本段为模拟版本验收，原讲义和作答历史保留。',sourceIds:['s1']});
+  await reviseCourse(actor,courseId,oldVersion,revised,'浏览器旧页面提交防护验收；无真实模型调用');
+  await page.getByRole('button',{name:'提交并保存结果'}).click();
+  await expect(page.getByRole('alert').filter({hasText:'课程版本已更新'})).toBeVisible();
+  await expect(page.locator('input[name="q1"][value="1"]')).toBeChecked();
+  await page.reload();await expect(page.getByRole('heading',{name:'修订补充讲解'})).toBeVisible();
+  expect(await page.locator('input[name="lesson_version"]').getAttribute('value')).toBe(`${oldVersion}:r1`);
+  for (const [index,choice] of [1,0,2,1,0].entries()) await page.locator(`input[name="q${index+1}"][value="${choice}"]`).check();
+  for(const width of [375,1440]){
+    await page.setViewportSize({width,height:950});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:`.runtime/m02-version-lesson-${width}.png`,fullPage:true});
+  }
+  await page.setViewportSize({width:375,height:950});
   await page.getByRole('button',{name:'提交并保存结果'}).click();
   await expect(page.getByText('5 / 5',{exact:true})).toBeVisible();
   await expect(page.getByText(/模拟作答记录/)).toBeVisible();
   await page.reload(); await expect(page.getByText('5 / 5',{exact:true})).toBeVisible();
+  const resultURL=page.url();await expect(page.getByText(`课程版本 ${oldVersion}:r1`,{exact:false})).toBeVisible();
+  await page.setViewportSize({width:1440,height:950});
+  await page.getByRole('button',{name:'退出登录'}).click();await expect(page).toHaveURL(/\/login$/);
+  await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'登录并继续'}).click();await expect(page).toHaveURL(/\/today$/);
+  await page.goto(resultURL);await expect(page.getByText('5 / 5',{exact:true})).toBeVisible();
 });

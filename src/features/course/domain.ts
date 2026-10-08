@@ -3,6 +3,7 @@ export type DaySlot = { date:string; month:string; week:number; day:number; focu
 export type Question = { id:string; prompt:string; options:string[]; correctIndex:number; explanation:string; sourceIds:string[] };
 export type Material = { title:string; scope:string; weeklyTopics:string[]; lesson:{ title:string; outcome:string; sections:{heading:string; body:string; sourceIds:string[]}[]; practice:string; questions:Question[] } };
 export type Usage = { inputTokens:number; outputTokens:number;reasoningTokens?:number };
+export const courseVersion=(course:{provenance:string;active_generation:string|null;content_revision?:number})=>`${course.provenance}:${course.active_generation}${course.content_revision?`:r${course.content_revision}`:''}`;
 export const sourceHosts = ['science.nasa.gov','docs.python.org','developer.mozilla.org','openstax.org','ocw.mit.edu','en.wikipedia.org','zh.wikipedia.org','learn.microsoft.com','help.aliyun.com','docs.langchain.com','viva.pressbooks.pub','openmusictheory.github.io','www.fiba.basketball','www.fide.com'];
 export const todayInShanghai = () => new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
 export const validId = (id:string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);

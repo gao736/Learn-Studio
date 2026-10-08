@@ -3,7 +3,7 @@ import {createEmptyCard} from 'ts-fsrs';
 import type {CardInput} from 'ts-fsrs';
 import type {PoolClient} from 'pg';
 import {withUserDatabase} from '../../server/db.ts';
-import {validId} from '../course/domain.ts';
+import {validId,courseVersion} from '../course/domain.ts';
 import type {Course} from '../course/repository.ts';
 import {questionKey} from '../assessment/domain.ts';
 import {astronomyPack} from '../assessment/catalog.ts';
@@ -36,9 +36,11 @@ export async function syncReviews(user:string){return withUserDatabase(user,asyn
     if(a.lesson_id==='astronomy')added+=await addReviewCards(c,user,{lessonId:a.id,label:'天文学 · 恒星、行星与卫星',provenance:'curated'},astronomyQuestions,astronomySources);
     else if(a.lesson_id.startsWith('course:')&&a.lesson_version.startsWith('real:')){
       const course=(await c.query<Course>('SELECT * FROM learning_courses WHERE id=$1 AND owner_id=$2 AND status=\'ready\' AND provenance=\'real\'',[a.lesson_id.slice(7),user])).rows[0];
-      if(!course?.material||a.lesson_version!==`real:${course.active_generation}`){skipped++;continue;}
-      const questions=course.material.lesson.questions.filter(q=>a.feedback.some((e:{prompt:string;correctAnswer:string})=>e.prompt===q.prompt&&e.correctAnswer===q.options[q.correctIndex]));
-      added+=await addReviewCards(c,user,{lessonId:a.id,courseId:course.id,label:course.material.title,provenance:'real'},questions,course.sources);
+      if(!course?.material){skipped++;continue;}
+      const snapshot=a.lesson_version===courseVersion(course)?course:(await c.query<Pick<Course,'material'|'sources'>>('SELECT material,sources FROM course_material_versions WHERE course_id=$1 AND owner_id=$2 AND version=$3',[course.id,user,a.lesson_version])).rows[0];
+      if(!snapshot?.material){skipped++;continue;}
+      const questions=snapshot.material.lesson.questions.filter(q=>a.feedback.some((e:{prompt:string;correctAnswer:string})=>e.prompt===q.prompt&&e.correctAnswer===q.options[q.correctIndex]));
+      added+=await addReviewCards(c,user,{lessonId:a.id,courseId:course.id,label:snapshot.material.title,provenance:'real'},questions,snapshot.sources);
     }else skipped++;
   }
   const sessions=(await c.query("SELECT * FROM assessment_sessions WHERE owner_id=$1 AND state='submitted' ORDER BY created_at,id",[user])).rows;

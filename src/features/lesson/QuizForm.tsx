@@ -1,13 +1,14 @@
 'use client';
 import { useActionState } from 'react';
 import { submitQuiz } from './actions';
-export function QuizForm({ questions, submissionKey, courseId, quizAction = submitQuiz }: { questions: { id: string; prompt: string; options: string[] }[]; submissionKey: string; courseId?:string; quizAction?:typeof submitQuiz }) {
+export function QuizForm({ questions, submissionKey, courseId, lessonVersion, quizAction = submitQuiz }: { questions: { id: string; prompt: string; options: string[] }[]; submissionKey: string; courseId?:string; lessonVersion?:string; quizAction?:typeof submitQuiz }) {
   const [state, action, pending] = useActionState(quizAction, { error: '' });
   // A returned save error still resolves the Action: cancel its automatic reset.
   // Successful submissions redirect, so this form never needs to clear in place.
   return <form action={action} onReset={event => event.preventDefault()}>
     <input type="hidden" name="submission_key" value={submissionKey} />
     {courseId && <input type="hidden" name="course_id" value={courseId} />}
+    {lessonVersion && <input type="hidden" name="lesson_version" value={lessonVersion} />}
     {questions.map((question, index) => <fieldset key={question.id} disabled={pending}>
       <legend>{index + 1}. {question.prompt}</legend>
       {question.options.map((option, choice) => <label className="option" key={choice}>

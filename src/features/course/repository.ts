@@ -5,10 +5,10 @@ import { withUserDatabase } from '../../server/db.ts';
 import { getBoss, courseQueue } from '../../server/queue.ts';
 import {modelConfig,validFreePrice} from '../../server/model.ts';
 import type {FreePrice} from '../../server/model.ts';
-import { validateGoal, validId, buildSchedule, validateMaterial, validateUsage,estimateFen, gradeLesson } from './domain.ts';
+import { validateGoal, validId, buildSchedule, validateMaterial, validateUsage,estimateFen, gradeLesson,courseVersion } from './domain.ts';
 import type { Goal, DaySlot, Material, Usage } from './domain.ts';
 export type SourceReceipt = {id:string;url:string;title:string;fetchedAt:string;digest:string};
-export type Course = {id:string;submission_key:string;goal:Goal;schedule:DaySlot[];status:string;error:string;material:Material|null;sources:SourceReceipt[];provenance:string;active_generation:string|null;generation_updated_at:Date|null;billing_status:string|null;accounted_fen:number|null;model_provider:string|null;model_name:string|null;attempts:number};
+export type Course = {id:string;submission_key:string;goal:Goal;schedule:DaySlot[];status:string;error:string;material:Material|null;sources:SourceReceipt[];provenance:string;active_generation:string|null;content_revision:number;generation_updated_at:Date|null;billing_status:string|null;accounted_fen:number|null;model_provider:string|null;model_name:string|null;attempts:number};
 const selectCourse = `SELECT c.*,g.updated_at AS generation_updated_at,g.billing_status,g.accounted_fen,g.model_provider,g.model_name,
   (SELECT count(*)::int FROM course_generations h WHERE h.course_id=c.id) AS attempts
   FROM learning_courses c LEFT JOIN course_generations g ON g.id=c.active_generation`;
@@ -19,6 +19,35 @@ export async function listCourses(userId:string) {
 export async function getCourse(userId:string, id:string) {
   if (!validId(id)) return null;
   return withUserDatabase(userId,async c => (await c.query<Course>(`${selectCourse} WHERE c.owner_id=$1 AND c.id=$2`,[userId,id])).rows[0] ?? null);
+}
+export async function getCourseMaterial(userId:string,id:string,version:string):Promise<Material|null>{
+  const course=await getCourse(userId,id);
+  if(!course)return null;
+  if(courseVersion(course)===version)return course.material;
+  return withUserDatabase(userId,async c=>(await c.query('SELECT material FROM course_material_versions WHERE course_id=$1 AND owner_id=$2 AND version=$3',[id,userId,version])).rows[0]?.material??null);
+}
+export async function reviseCourse(userId:string,id:string,expectedVersion:string,raw:unknown,reason:string){
+  if(!validId(id))throw new Error('找不到这个课程。');
+  if(typeof reason!=='string'||!reason.trim()||reason.length>800)throw new Error('课程修订需说明原因（最多800字）。');
+  return withUserDatabase(userId,async c=>{
+    await lockUser(c,userId);
+    const course=(await c.query<Course>('SELECT * FROM learning_courses WHERE id=$1 AND owner_id=$2 FOR UPDATE',[id,userId])).rows[0];
+    if(!course?.material||course.status!=='ready'||!course.active_generation)throw new Error('找不到可修订的课程。');
+    if(courseVersion(course)!==expectedVersion)throw new Error('课程版本已更新，请刷新后再修订。');
+    const material=validateMaterial(raw,course.goal,course.sources.map(s=>s.id));
+    const plan=(m:Material)=>[m.title,m.scope,m.weeklyTopics,m.lesson.title,m.lesson.outcome,m.lesson.practice];
+    if(JSON.stringify(plan(material))!==JSON.stringify(plan(course.material)))throw new Error('课程修订仅支持正文补充和题干、解释澄清，不能改变学习范围或计划。');
+    if(material.lesson.sections.length<course.material.lesson.sections.length||course.material.lesson.sections.some((s,i)=>s.heading!==material.lesson.sections[i].heading||JSON.stringify(s.sourceIds)!==JSON.stringify(material.lesson.sections[i].sourceIds)))throw new Error('课程修订需保留原章节引用和顺序。');
+    // ponytail: clarify teaching and prompts only; answer-key changes require a separate evidence/review migration.
+    const grading=(m:Material)=>m.lesson.questions.map(({id,options,correctIndex,sourceIds})=>({id,options,correctIndex,sourceIds}));
+    if(JSON.stringify(grading(material))!==JSON.stringify(grading(course.material)))throw new Error('课程修订不能改变选项或答案，请先完成评分依据复核。');
+    if(JSON.stringify(material)===JSON.stringify(course.material))return expectedVersion;
+    await c.query('INSERT INTO course_material_versions(course_id,owner_id,revision,version,material,sources,reason) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(course_id,revision) DO NOTHING',[id,userId,course.content_revision,expectedVersion,JSON.stringify(course.material),JSON.stringify(course.sources),'修订前内容快照']);
+    const revision=course.content_revision+1,version=courseVersion({...course,content_revision:revision});
+    await c.query('INSERT INTO course_material_versions(course_id,owner_id,revision,version,material,sources,reason) VALUES($1,$2,$3,$4,$5,$6,$7)',[id,userId,revision,version,JSON.stringify(material),JSON.stringify(course.sources),reason.trim()]);
+    await c.query('UPDATE learning_courses SET material=$2,content_revision=$3 WHERE id=$1',[id,JSON.stringify(material),revision]);
+    return version;
+  });
 }
 export async function createCourse(userId:string, key:string, input:Record<string,unknown>) {
   if (!validId(key)) throw new Error('提交凭证无效，请刷新后重试。');
@@ -163,14 +192,19 @@ export async function finishGeneration(userId:string, generationId:string, resul
     else await c.query("UPDATE learning_courses SET status='ready',error='',material=$2,sources=$3,schedule=$4,provenance=$5 WHERE id=$1",[row.course_id,JSON.stringify(material),JSON.stringify(result.sources),JSON.stringify(row.schedule.map((day:DaySlot)=>({...day,focus:material!.weeklyTopics[day.week-1]}))),simulated ? 'simulation' : 'real']);
   });
 }
-export async function saveCourseAttempt(userId:string,courseId:string,key:string,answers:Record<string,unknown>) {
+export async function saveCourseAttempt(userId:string,courseId:string,key:string,answers:Record<string,unknown>,expectedVersion?:string) {
   if (!validId(key) || !validId(courseId)) throw new Error('提交凭证无效。');
   return withUserDatabase(userId,async c => {
-    const course = (await c.query<Course>('SELECT * FROM learning_courses WHERE id=$1 AND owner_id=$2 AND status=\'ready\'',[courseId,userId])).rows[0];
+    await lockUser(c,userId);
+    const course = (await c.query<Course>('SELECT * FROM learning_courses WHERE id=$1 AND owner_id=$2 AND status=\'ready\' FOR SHARE',[courseId,userId])).rows[0];
     if (!course?.material) throw new Error('课程尚未生成或无权访问。');
+    const existing=(await c.query('SELECT id,score,total,lesson_id,lesson_version FROM lesson_attempts WHERE owner_id=$1 AND submission_key=$2',[userId,key])).rows[0];
+    if(existing){if(existing.lesson_id!==`course:${courseId}`)throw new Error('提交凭证已用于其他课堂，请刷新后重试。');return existing;}
+    const version=courseVersion(course);
+    if(expectedVersion!==undefined&&expectedVersion!==version)throw new Error('课程版本已更新，请刷新课堂后重新作答；未保存本次提交。');
     const grade = gradeLesson(course.material.lesson.questions,answers);
-    const result = await c.query('INSERT INTO lesson_attempts(id,owner_id,lesson_id,lesson_version,submission_key,score,total,answers,feedback) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_id,submission_key) DO UPDATE SET submission_key=lesson_attempts.submission_key RETURNING id,score,total,lesson_id,lesson_version',[randomUUID(),userId,`course:${courseId}`,`${course.provenance}:${course.active_generation}`,key,grade.score,grade.total,JSON.stringify(answers),JSON.stringify(grade.feedback)]);
-    if(result.rows[0].lesson_id!==`course:${courseId}`||result.rows[0].lesson_version!==`${course.provenance}:${course.active_generation}`)throw new Error('提交凭证已用于其他课堂或版本，请刷新后重试。');
+    const result = await c.query('INSERT INTO lesson_attempts(id,owner_id,lesson_id,lesson_version,submission_key,score,total,answers,feedback) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(owner_id,submission_key) DO UPDATE SET submission_key=lesson_attempts.submission_key RETURNING id,score,total,lesson_id,lesson_version',[randomUUID(),userId,`course:${courseId}`,version,key,grade.score,grade.total,JSON.stringify(answers),JSON.stringify(grade.feedback)]);
+    if(result.rows[0].lesson_id!==`course:${courseId}`||result.rows[0].lesson_version!==version)throw new Error('提交凭证已用于其他课堂或版本，请刷新后重试。');
     if(course.provenance==='real')await addReviewCards(c,userId,{lessonId:result.rows[0].id,courseId,label:course.material.title,provenance:'real'},course.material.lesson.questions,course.sources);
     return result.rows[0];
   });

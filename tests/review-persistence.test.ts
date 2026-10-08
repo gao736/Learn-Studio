@@ -7,7 +7,7 @@ import {fixtureMaterial} from './fixtures/course.ts';
 process.loadEnvFile('.env.local');
 const {pool,withUserDatabase}=await import('../src/server/db.ts');
 const {saveAttempt}=await import('../src/features/lesson/repository.ts');
-const {saveCourseAttempt}=await import('../src/features/course/repository.ts');
+const {saveCourseAttempt,reviseCourse}=await import('../src/features/course/repository.ts');
 const {startAssessment,submitAssessment,getProgress,requestReview}=await import('../src/features/assessment/repository.ts');
 const {listReviews,startReview,getReview,submitReview,syncReviews}=await import('../src/features/review/repository.ts');
 test('PostgreSQL reviews persist FSRS, isolate owners, reject early answers and apply each revision once',async t=>{
@@ -83,6 +83,15 @@ test('PostgreSQL reviews persist FSRS, isolate owners, reject early answers and 
   assert.equal((await withUserDatabase(ids[0],c=>c.query('SELECT id FROM review_cards WHERE course_id=$1',[courseId]))).rowCount,0);
   await assert.rejects(saveCourseAttempt(ids[0],courseId,randomUUID(),answers),/无权/);
   const realReview=await startReview(ids[1],privateCards[0].id);await submitReview(ids[1],realReview,'0','easy');
+  const missing=(await withUserDatabase(ids[1],c=>c.query("SELECT id FROM review_cards WHERE course_id=$1 AND question_id='q5'",[courseId]))).rows[0];
+  await withUserDatabase(ids[1],c=>c.query('DELETE FROM review_cards WHERE id=$1',[missing.id]));
+  const remembered=(await withUserDatabase(ids[1],c=>c.query('SELECT id,memory,due,revision FROM review_cards WHERE course_id=$1 ORDER BY id',[courseId]))).rows;
+  const correction=structuredClone(fixtureMaterial);correction.lesson.questions[4].prompt='修订版澄清后的题干';
+  await reviseCourse(ids[1],courseId,`real:${generation}`,correction,'复习历史版本兼容验收');
+  assert.equal((await syncReviews(ids[1])).added,1,'old-version questions must remain recoverable from the preserved snapshot');
+  assert.equal((await syncReviews(ids[1])).added,0);
+  assert.deepEqual((await withUserDatabase(ids[1],c=>c.query("SELECT id,memory,due,revision FROM review_cards WHERE course_id=$1 AND question_id<>'q5' ORDER BY id",[courseId]))).rows,remembered);
+  assert.equal((await withUserDatabase(ids[1],c=>c.query("SELECT question->>'prompt' AS prompt FROM review_cards WHERE course_id=$1 AND question_id='q5'",[courseId]))).rows[0].prompt,fixtureMaterial.lesson.questions[4].prompt);
   await withUserDatabase(ids[1],c=>c.query('DELETE FROM learning_courses WHERE id=$1',[courseId]));
   assert.equal(await getReview(ids[1],realReview),null);
   await withUserDatabase(ids[0],c=>c.query("INSERT INTO learning_courses(id,owner_id,submission_key,goal,schedule,status,material,sources,provenance,active_generation) VALUES($1,$2,$3,$4,'[]','ready',$5,$6,'simulation',$7)",[randomUUID(),ids[0],randomUUID(),JSON.stringify(goal),JSON.stringify(fixtureMaterial),JSON.stringify(sources),randomUUID()]));

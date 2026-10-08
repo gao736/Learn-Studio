@@ -9,7 +9,7 @@ process.env.SILICONFLOW_API_KEY = 'local-integration-not-a-real-key';
 process.env.SILICONFLOW_BASE_URL = 'https://api.siliconflow.cn/v1';process.env.SILICONFLOW_MODEL=fixtureModel;
 const { pool, withUserDatabase } = await import('../src/server/db.ts');
 const { getBoss, courseQueue } = await import('../src/server/queue.ts');
-const { createCourse, getCourse, requestGeneration, beginGeneration, finishGeneration, saveCourseAttempt } = await import('../src/features/course/repository.ts');
+const { createCourse, getCourse, requestGeneration, beginGeneration, finishGeneration, saveCourseAttempt, reviseCourse, getCourseMaterial } = await import('../src/features/course/repository.ts');
 const { runGeneration } = await import('../src/features/course/generate.ts');
 
 test('PostgreSQL course workflow isolates users, queues transactionally and recovers without double charges', async t => {
@@ -27,6 +27,7 @@ test('PostgreSQL course workflow isolates users, queues transactionally and reco
     }
     await boss.deleteQueue(courseQueue); await boss.stop(); await pool.end();
   });
+  assert.equal(typeof reviseCourse,'function','source corrections must preserve the original course version');
   for (const id of ids) await pool.query('INSERT INTO "user"(id,name,email,"emailVerified","createdAt","updatedAt") VALUES($1,$2,$3,true,now(),now())',[id,'M02验收账户',`${id}@example.test`]);
   const input = { topic:'天文学', days:7, dailyMinutes:30, startDate:'2026-10-06' };
   const key = randomUUID();
@@ -46,7 +47,7 @@ test('PostgreSQL course workflow isolates users, queues transactionally and reco
   const snapshot=(await withUserDatabase(ids[0],c=>c.query('SELECT * FROM course_generations WHERE id=$1',[calls[0]]))).rows[0];
   assert.equal(snapshot.model_provider,'siliconflow');assert.equal(snapshot.model_name,fixtureModel);
   assert.ok(await beginGeneration(ids[0],calls[0]));
-  const receipts = [{id:'s1',url:'https://science.nasa.gov/universe/stars/',title:'模拟来源',fetchedAt:new Date().toISOString(),digest:'simulation'}];
+  const receipts = [{id:'s1',url:'https://science.nasa.gov/universe/stars/',title:'模拟来源',fetchedAt:new Date().toISOString(),digest:'simulation'},{id:'s2',url:'https://science.nasa.gov/universe/stars/',title:'第二模拟来源',fetchedAt:new Date().toISOString(),digest:'simulation-2'}];
   await finishGeneration(ids[0],calls[0],{ material:fixtureMaterial, sources:receipts, usage:{inputTokens:0,outputTokens:0}, provenance:'simulation' });
   await finishGeneration(ids[0],calls[0],{error:'late duplicate',unknownCharge:true});
   assert.equal((await getCourse(ids[0],course.id))?.status,'ready');
@@ -56,6 +57,31 @@ test('PostgreSQL course workflow isolates users, queues transactionally and reco
   assert.equal(result.score,5);
   assert.equal((await saveCourseAttempt(ids[0],course.id,attemptKey,{...answers,q1:'0'})).id,result.id);
   await assert.rejects(saveCourseAttempt(ids[1],course.id,randomUUID(),answers));
+  const originalVersion=`simulation:${calls[0]}`;
+  const revised=structuredClone(fixtureMaterial);
+  revised.lesson.sections.push({heading:'补充讲解',body:'按原来源补充先前遗漏的概念。',sourceIds:['s1']});
+  revised.lesson.questions[4].prompt='补充讲解后的澄清题干';
+  const recordedGeneration=(await withUserDatabase(ids[0],c=>c.query('SELECT * FROM course_generations WHERE course_id=$1',[course.id]))).rows;
+  await assert.rejects(reviseCourse(ids[1],course.id,originalVersion,revised,'来源核对后补充'),/找不到/);
+  await reviseCourse(ids[0],course.id,originalVersion,revised,'来源核对后补充');
+  const corrected=await getCourse(ids[0],course.id);
+  assert.equal(corrected?.content_revision,1);assert.equal(corrected?.active_generation,calls[0]);assert.equal(corrected?.attempts,1);
+  assert.deepEqual((await withUserDatabase(ids[0],c=>c.query('SELECT * FROM course_generations WHERE course_id=$1',[course.id]))).rows,recordedGeneration);
+  assert.deepEqual(await getCourseMaterial(ids[0],course.id,originalVersion),fixtureMaterial);
+  assert.equal(await getCourseMaterial(ids[1],course.id,originalVersion),null);
+  const history=await withUserDatabase(ids[0],c=>c.query('SELECT revision FROM course_material_versions WHERE course_id=$1 ORDER BY revision',[course.id]));
+  assert.deepEqual(history.rows.map(r=>r.revision),[0,1]);
+  await assert.rejects(saveCourseAttempt(ids[0],course.id,randomUUID(),answers,originalVersion),/版本已更新/);
+  assert.equal((await saveCourseAttempt(ids[0],course.id,attemptKey,{...answers,q1:'0'},originalVersion)).score,5);
+  const newResult=await saveCourseAttempt(ids[0],course.id,randomUUID(),answers,`${originalVersion}:r1`);
+  assert.equal(newResult.lesson_version,`${originalVersion}:r1`);
+  const invalidRevision=structuredClone(revised);invalidRevision.lesson.questions[0].correctIndex=0;
+  await assert.rejects(reviseCourse(ids[0],course.id,`${originalVersion}:r1`,invalidRevision,'不能静默改答案'),/选项或答案/);
+  const changedPlan=structuredClone(revised);changedPlan.weeklyTopics[0]='不能在正文修订时改变已保存日程';
+  await assert.rejects(reviseCourse(ids[0],course.id,`${originalVersion}:r1`,changedPlan,'课程日程另行审批'),/仅支持/);
+  const changedSource=structuredClone(revised);changedSource.lesson.sections[0].sourceIds=['s2'];
+  await assert.rejects(reviseCourse(ids[0],course.id,`${originalVersion}:r1`,changedSource,'不能把原文换挂另一来源'),/原章节引用/);
+  await assert.rejects(reviseCourse(ids[0],course.id,originalVersion,revised,'重复旧版本修订'),/版本已更新/);
   await withUserDatabase(ids[0],c=>c.query('UPDATE learning_courses SET created_day=created_day-1 WHERE id=$1',[course.id]));
   await assert.rejects(createCourse(ids[0],randomUUID(),input),/时间/);
   const shared = await createCourse(ids[0],randomUUID(),{...input,dailyMinutes:35});
