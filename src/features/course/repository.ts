@@ -77,7 +77,7 @@ function budgetLimit(name:string, maximum:number) {
   if (!Number.isInteger(value) || value < 0 || value > maximum) throw new Error('模型预算配置无效。');
   return value;
 }
-async function changeBudget(c:PoolClient, day:string, delta:number, reserve=false) {
+export async function changeBudget(c:PoolClient, day:string, delta:number, reserve=false) {
   for (const period of periods(day)) {
     await c.query('INSERT INTO model_budgets(period,used_fen) VALUES($1,0) ON CONFLICT DO NOTHING',[period]);
     const row = await c.query('SELECT used_fen FROM model_budgets WHERE period=$1 FOR UPDATE',[period]);

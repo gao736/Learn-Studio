@@ -1,6 +1,6 @@
 'use client';
 import {useActionState,useEffect,useRef,useState,useTransition} from 'react';
-import {startAction,submitAction,helpAction,reviewAction,resolveAction,candidateAction,publishAction} from './actions';
+import {startAction,submitAction,helpAction,reviewAction,resolveAction,candidateAction,publishAction,aiCheckAction} from './actions';
 import type {FormState} from './actions';
 type Action=(state:FormState,data:FormData)=>Promise<FormState>;
 export function SmallForm({action,hidden,children}:{action:Action;hidden:Record<string,string>;children:React.ReactNode}){
@@ -14,7 +14,8 @@ export function SmallForm({action,hidden,children}:{action:Action;hidden:Record<
   </form>;
 }
 export function StartForm({pack,skill,canExam=true}:{pack:string;skill:string;canExam?:boolean}){return <SmallForm action={startAction} hidden={{pack_id:pack,skill_id:skill}}><div className="assessment-actions">{canExam&&<button className="button" name="mode" value="exam">独立考核 / 新题补测</button>}<button className="button secondary" name="mode" value="diagnosis">诊断基础</button><button className="button secondary" name="mode" value="skip">跳级测验</button></div></SmallForm>;}
-export function CandidateForm({courseId}:{courseId:string}){return <SmallForm action={candidateAction} hidden={{course_id:courseId}}><button className="button secondary">申请诊断题库审核</button></SmallForm>;}
+export function CandidateForm({courseId}:{courseId:string}){return <SmallForm action={candidateAction} hidden={{course_id:courseId}}><button className="button secondary">准备独立诊断题库</button></SmallForm>;}
+export function AICheckForm({packId}:{packId:string}){return <SmallForm action={aiCheckAction} hidden={{pack_id:packId}}><button className="button">AI 核对题库</button><p className="note">对照来源检查新题；依据不足时保持未开放。不等于人工审核或能力认证。</p></SmallForm>;}
 type PublicQuestion={id:string;prompt:string;type:string;options?:string[]};
 export function AssessmentForm({id,questions,initialHelp}:{id:string;questions:PublicQuestion[];initialHelp:Record<string,{text:string}>}){
   const [state,action,pending]=useActionState(submitAction,{error:''});const [help,setHelp]=useState(initialHelp),[helpError,setHelpError]=useState('');

@@ -4,6 +4,24 @@ export type Question={id:string;skill:string;family:string;type:'choice'|'writte
 export type Skill={id:string;title:string;prerequisites:string[];requiresPractice:boolean;lesson:string;sourceIds:string[]};
 export type Pack={title:string;version:number;sources:{id:string;title:string;url:string}[];skills:Skill[];questions:Question[]};
 export type Evidence={family:string;correct:boolean|null;independent:boolean;pending:boolean};
+export function validateAIReport(pack:Pack,raw:unknown,sources:{id:string;url:string;text:string}[],blocked:string[]){
+  const r=raw as any;
+  // Compare typography only; never fuzzy-match changed words or unsupported claims.
+  const quoted=(s:string)=>s.replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/\s+/g,' ');
+  if(!r||!Array.isArray(r.questions)||!Array.isArray(r.skills))throw new Error('考核AI报告不完整，题库未开放。');
+  if(r.familiesValid!==true)throw new Error('考核题族或补测独立性未通过AI核对，题库未开放。');
+  if(r.prerequisitesValid!==true)throw new Error('考核前置关系或教学正文未通过AI核对，题库未开放。');
+  if(pack.sources.some(s=>!sources.some(v=>v.id===s.id&&v.url===s.url))||pack.questions.some(q=>q.type!=='choice'||blocked.includes(questionKey(q))))throw new Error('考核来源不符或重复原课问题，题库未开放。');
+  for(const [items,checks] of [[pack.skills,r.skills],[pack.questions,r.questions]] as const){
+    if(checks.length!==items.length||new Set(checks.map((v:any)=>v.id)).size!==items.length)throw new Error('考核AI核对遗漏或重复题目。');
+    for(const item of items){
+      const check=checks.find((v:any)=>v.id===item.id),source=sources.find(s=>s.id===check?.sourceId);
+      const literal=typeof check?.quote==='string'?quoted(check.quote).trim():'';
+      if(!check||check.verdict!=='supported'||!item.sourceIds.includes(check.sourceId)||typeof check.quote!=='string'||literal.length<12||literal.length>400||check.quote.length>400||!source||!quoted(source.text).includes(literal)||('correctIndex' in item&&(check.correctIndex!==item.correctIndex||check.correctOptionText!==item.options![item.correctIndex!])))throw new Error('考核AI依据不足、评分不一致或不确定，题库未开放。');
+    }
+  }
+  return r;
+}
 export function mastery(evidence:Evidence[],requiresPractice:boolean) {
   const latest=new Map<string,Evidence>();
   for (const e of evidence) if(e.independent && !e.pending && typeof e.correct==='boolean') {latest.delete(e.family);latest.set(e.family,e);}

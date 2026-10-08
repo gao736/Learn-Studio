@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {validateAIReport} from '../src/features/assessment/domain.ts';
 import assert from 'node:assert/strict';
 import { mastery, pickQuestions, validatePack, questionKey } from '../src/features/assessment/domain.ts';
 import { astronomyPack } from '../src/features/assessment/catalog.ts';
@@ -9,6 +10,23 @@ test('unlock needs four correct independent families out of five and required pr
   assert.equal(mastery(evidence,true).passed,false);
   assert.equal(mastery(evidence.slice(0,4),false).passed,false);
   assert.equal(mastery(evidence.map(e=>({...e,independent:false})),false).passed,false);
+});
+
+test('AI check fails closed on unsupported, missing, invented and mismatched evidence',()=>{
+  const pack=structuredClone(astronomyPack);pack.questions=pack.questions.filter(q=>q.type==='choice');
+  const sources=pack.sources.map(s=>({...s,text:'A supported statement about stars.'}));
+  const report={familiesValid:true,prerequisitesValid:true,skills:pack.skills.map(s=>({id:s.id,verdict:'supported',sourceId:s.sourceIds[0],quote:'supported statement'})),questions:pack.questions.map(q=>({id:q.id,verdict:'supported',correctIndex:q.correctIndex,correctOptionText:q.options![q.correctIndex!],sourceId:q.sourceIds[0],quote:'supported statement'}))};
+  assert.doesNotThrow(()=>validateAIReport(pack,report,sources,[]));
+  for(const mutate of [(r:any)=>r.questions.pop(),(r:any)=>r.questions[0].verdict='uncertain',(r:any)=>r.questions[0].quote='invented quotation',(r:any)=>r.questions[0].correctIndex=99,(r:any)=>r.familiesValid=false,(r:any)=>r.skills[0].sourceId='other']){
+    const bad=structuredClone(report);mutate(bad);assert.throws(()=>validateAIReport(pack,bad,sources,[]),/考核/);
+  }
+  assert.throws(()=>validateAIReport(pack,report,sources,[questionKey(pack.questions[0])]),/重复|原课/);
+  assert.throws(()=>validateAIReport(pack,{...report,familiesValid:false},sources,[]),/题族/);
+  assert.throws(()=>validateAIReport(pack,{...report,prerequisitesValid:false},sources,[]),/前置/);
+  const wrongText=structuredClone(report);wrongText.questions[0].correctOptionText='wrong option text';assert.throws(()=>validateAIReport(pack,wrongText,sources,[]),/考核/);
+  const punctuation=structuredClone(report);for(const item of [...punctuation.skills,...punctuation.questions])item.quote="stars' gas is hot.";
+  assert.doesNotThrow(()=>validateAIReport(pack,punctuation,sources.map(s=>({...s,text:'The stars’ gas is hot.'})),[]));
+  for(const quote of ['            ','stars       ']){const empty=structuredClone(report);empty.questions[0].quote=quote;assert.throws(()=>validateAIReport(pack,empty,sources,[]),/考核/);}
 });
 test('repeated families and pending review never manufacture mastery', () => {
   const repeated=Array.from({length:10},()=>({family:'same',correct:true,independent:true,pending:false}));

@@ -1,0 +1,85 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {fixtureMaterial} from './fixtures/course.ts';
+import {astronomyPack} from '../src/features/assessment/catalog.ts';
+import {fixtureModel,fixturePricing} from './fixtures/siliconflow.ts';
+process.loadEnvFile('.env.local');
+process.env.ASSESSMENT_QUEUE=`assessment-check-test-${randomUUID()}`;
+process.env.SILICONFLOW_API_KEY='isolated-test-fixture';
+const {pool,withUserDatabase}=await import('../src/server/db.ts');
+const {getBoss}=await import('../src/server/queue.ts');
+const {changeBudget}=await import('../src/features/course/repository.ts');
+const {closeAIDatabase,withAIDatabase}=await import('../src/server/ai-db.ts');
+const {createCandidate,getPack,getProgress,startAssessment,submitAssessment,requestHelp,getStudy}=await import('../src/features/assessment/repository.ts');
+const {requestAICheck,runAICheck,aiCheckStatus}=await import('../src/features/assessment/ai.ts');
+
+test('AI-checked learning preserves provenance, permissions, budgets, failures and independent evidence',async t=>{
+  const users=[randomUUID(),randomUUID(),randomUUID()],courses:string[]=[];
+  const boss=await getBoss();
+  const budgetBefore=(await pool.query('SELECT * FROM model_budgets ORDER BY period')).rows;
+  t.after(async()=>{try{for(const user of users)await withUserDatabase(user,async c=>{const rows=(await c.query('SELECT budget_day,sum(accounted_fen)::int AS amount FROM assessment_ai_checks WHERE owner_id=$1 GROUP BY budget_day',[user])).rows;for(const row of rows)await changeBudget(c,row.budget_day,-row.amount);});await pool.query('DELETE FROM "user" WHERE id=ANY($1::text[])',[users]);await boss.deleteQueue(process.env.ASSESSMENT_QUEUE!);}finally{await closeAIDatabase();await boss.stop();await pool.end();}});
+  for(const id of users)await pool.query('INSERT INTO "user"(id,name,email,"emailVerified","createdAt","updatedAt") VALUES($1,\'AI boundary fixture\',$2,true,now(),now())',[id,`${id}@example.test`]);
+  async function course(owner=users[0]){const id=randomUUID();courses.push(id);await withUserDatabase(owner,c=>c.query("INSERT INTO learning_courses(id,owner_id,submission_key,goal,schedule,status,material,sources,provenance,active_generation,created_day) VALUES($1,$2,$3,$4,'[]','ready',$5,$6,'real',$7,DATE '2020-01-01'+$8::int)",[id,owner,randomUUID(),JSON.stringify({topic:'仅自动检查夹具'}),JSON.stringify(fixtureMaterial),JSON.stringify([{id:'stars',url:'https://science.nasa.gov/universe/stars/',title:'Fixture source'}]),randomUUID(),courses.length]));return createCandidate(owner,id);}
+  const pack=structuredClone(astronomyPack);pack.skills=pack.skills.slice(0,1);pack.skills[0].sourceIds=['stars'];pack.questions=pack.questions.filter(q=>q.skill==='light').map(q=>({...q,prompt:`边界测试情境：${q.prompt}`}));pack.sources=pack.sources.slice(0,1);pack.questions.forEach(q=>q.sourceIds=['stars']);
+  const quote='This is a source quotation for an isolated boundary fixture.';
+  let verdict='supported',httpStatus=200,modelCalls=0,activePack=pack;
+  const report=(payload:any)=>({familiesValid:true,prerequisitesValid:true,skills:activePack.skills.filter(s=>s.id===payload.currentSkillId).map((s:any)=>({id:s.id,verdict:'supported',sourceId:'stars',quote})),questions:payload.pack.questions.map((q:any)=>{const key=activePack.questions.find(v=>v.id===q.id)!;return {id:q.id,verdict,correctIndex:key.correctIndex,correctOptionText:key.options![key.correctIndex!],sourceId:'stars',quote};})});
+  t.mock.method(globalThis,'fetch',async(input:any,init:any)=>{
+    if(String(input).includes('/pricing'))return new Response(fixturePricing(),{headers:{'content-type':'text/html'}});
+    if(String(input).includes('science.nasa.gov'))return new Response(`<article>${quote.repeat(8)}</article>`,{headers:{'content-type':'text/html'}});
+    modelCalls++;const payload=JSON.parse(JSON.parse(init.body).messages[1].content);const raw=payload.pack?report(payload):activePack;
+    return new Response(JSON.stringify({model:fixtureModel,usage:{prompt_tokens:1000,completion_tokens:500},choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}),{status:httpStatus});
+  });
+  const id=await course();
+  await assert.rejects(requestAICheck(users[1],id,pack),/自己的/);
+  await assert.rejects(withUserDatabase(users[0],c=>c.query("UPDATE assessment_packs SET status='approved',approval_mode='ai' WHERE id=$1",[id])));
+  await assert.rejects(withUserDatabase(users[0],c=>c.query("INSERT INTO assessment_ai_checks(id,owner_id,pack_id,course_version,budget_day,model_name,status,checked_spec) VALUES($1,$2,$3,'forged','2020-01-01',$4,'completed',$5)",[randomUUID(),users[0],id,fixtureModel,JSON.stringify(pack)])));
+  const request=await requestAICheck(users[0],id,pack);
+  await assert.rejects(withUserDatabase(users[0],c=>c.query("UPDATE assessment_ai_checks SET status='completed',checked_spec=$2 WHERE id=$1",[request,JSON.stringify(pack)])));
+  assert.equal(await requestAICheck(users[0],id,pack),request);
+  assert.equal(await aiCheckStatus(users[1],id),null);
+  await assert.rejects(startAssessment(users[0],id,'light','exam'),/审核/);
+  await runAICheck({ownerId:users[0],checkId:request});
+  assert.equal((await aiCheckStatus(users[0],id)).status,'completed');
+  assert.equal((await getPack(users[0],id))?.approval_mode,'ai');
+  await runAICheck({ownerId:users[0],checkId:request});assert.equal(modelCalls,1);
+  const first=await startAssessment(users[0],id,'light','diagnosis');await requestHelp(users[0],first.id,first.questions[0].id,'hint');
+  await submitAssessment(users[0],first.id,Object.fromEntries(first.questions.map(q=>[q.id,String(q.correctIndex)])));
+  assert.equal((await getProgress(users[0],id)).light.passed,false);assert.ok((await getStudy(users[0],id,'light'))?.remediation.length);
+  const second=await startAssessment(users[0],id,'light','exam');assert.ok(second.questions.every(q=>!first.questions.some(v=>v.id===q.id)));
+  await submitAssessment(users[0],second.id,Object.fromEntries(second.questions.map(q=>[q.id,String(q.correctIndex)])));
+  assert.equal((await getProgress(users[0],id)).light.passed,true);
+  assert.deepEqual((await pool.query('SELECT * FROM model_budgets ORDER BY period')).rows,budgetBefore);
+  verdict='uncertain';const uncertain=await course(),u=await requestAICheck(users[0],uncertain,pack);await runAICheck({ownerId:users[0],checkId:u});
+  assert.equal((await aiCheckStatus(users[0],uncertain)).status,'failed');assert.equal((await getPack(users[0],uncertain))?.status,'pending');
+  httpStatus=500;const unknown=await course(),x=await requestAICheck(users[0],unknown,pack);await runAICheck({ownerId:users[0],checkId:x});
+  const record=await withUserDatabase(users[0],c=>c.query('SELECT accounted_fen,calls FROM assessment_ai_checks WHERE id=$1',[x]));assert.equal(record.rows[0].accounted_fen,20);assert.equal(record.rows[0].calls[0].unknownCharge,true);
+  const expired=await course(),old=await requestAICheck(users[0],expired,pack);await withAIDatabase(users[0],c=>c.query("UPDATE assessment_ai_checks SET updated_at=now()-interval '4 minutes' WHERE id=$1",[old]));
+  // Candidate was created before a lesson revision; the revised original prompt must still be blocked.
+  const revised=structuredClone(fixtureMaterial);revised.lesson.questions[0].prompt=pack.questions[0].prompt;
+  await withUserDatabase(users[0],c=>c.query('UPDATE learning_courses SET material=$2,content_revision=content_revision+1 WHERE id=(SELECT course_id FROM assessment_packs WHERE id=$1)',[expired,JSON.stringify(revised)]));
+  const fresh=await requestAICheck(users[0],expired,pack);assert.notEqual(old,fresh);
+  const oldRow=await withUserDatabase(users[0],c=>c.query('SELECT status,accounted_fen FROM assessment_ai_checks WHERE id=$1',[old]));assert.equal(oldRow.rows[0].status,'failed');assert.equal(oldRow.rows[0].accounted_fen,0);
+  httpStatus=200;verdict='supported';await runAICheck({ownerId:users[0],checkId:fresh});
+  assert.equal((await aiCheckStatus(users[0],expired)).status,'failed');assert.match((await aiCheckStatus(users[0],expired)).error,/原课|重复/);
+  assert.equal((await getPack(users[0],expired))?.status,'pending');
+  const capped=await course(users[1]);let third='';
+  for(let attempt=0;attempt<5;attempt++){third=await requestAICheck(users[1],capped,pack);await withAIDatabase(users[1],c=>c.query("UPDATE assessment_ai_checks SET updated_at=now()-interval '4 minutes' WHERE id=$1",[third]));}
+  await assert.rejects(requestAICheck(users[1],capped,pack),/上限/);
+  const settled=await withUserDatabase(users[1],c=>c.query('SELECT status,accounted_fen FROM assessment_ai_checks WHERE id=$1',[third]));
+  assert.equal(settled.rows[0].status,'failed');assert.equal(settled.rows[0].accounted_fen,0);
+  const budgetBlocked=await course(users[2]),reserved=await requestAICheck(users[2],budgetBlocked,pack);
+  await withAIDatabase(users[2],c=>c.query("UPDATE assessment_ai_checks SET updated_at=now()-interval '4 minutes' WHERE id=$1",[reserved]));
+  const previousLimit=process.env.MODEL_DAILY_BUDGET_FEN;process.env.MODEL_DAILY_BUDGET_FEN='0';
+  try{await assert.rejects(requestAICheck(users[2],budgetBlocked,pack),/预算/);}finally{if(previousLimit===undefined)delete process.env.MODEL_DAILY_BUDGET_FEN;else process.env.MODEL_DAILY_BUDGET_FEN=previousLimit;}
+  const released=await withUserDatabase(users[2],c=>c.query('SELECT status,accounted_fen FROM assessment_ai_checks WHERE id=$1',[reserved]));
+  assert.equal(released.rows[0].status,'failed');assert.equal(released.rows[0].accounted_fen,0);
+  activePack=structuredClone(astronomyPack);activePack.sources=activePack.sources.slice(0,1);activePack.skills.forEach(s=>s.sourceIds=['stars']);
+  activePack.questions=activePack.questions.map(q=>({...q,prompt:`生成边界测试：${q.prompt}`,sourceIds:['stars'],type:'choice',options:q.options??['白矮星','行星','分子云'],correctIndex:q.correctIndex??0}));
+  const generated=await course(users[2]),generation=await requestAICheck(users[2],generated);
+  await runAICheck({ownerId:users[2],checkId:generation});
+  assert.equal((await aiCheckStatus(users[2],generated)).status,'completed');
+  const receipt=await withUserDatabase(users[2],c=>c.query('SELECT calls,report,accounted_fen FROM assessment_ai_checks WHERE id=$1',[generation]));
+  assert.equal(receipt.rows[0].calls.length,3);assert.equal(receipt.rows[0].report.length,2);assert.equal(receipt.rows[0].accounted_fen,0);
+});

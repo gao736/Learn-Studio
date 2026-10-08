@@ -3,11 +3,19 @@ import type {Page} from '@playwright/test';
 import {readFile,readdir} from 'node:fs/promises';
 import {Pool} from 'pg';
 import {execFileSync} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
+import {pool,withUserDatabase} from '../../src/server/db.ts';
+import {withAIDatabase,closeAIDatabase} from '../../src/server/ai-db.ts';
+import {createCandidate} from '../../src/features/assessment/repository.ts';
+import {fixtureMaterial} from '../fixtures/course.ts';
+import {astronomyPack} from '../../src/features/assessment/catalog.ts';
+const baseURL=process.env.BETTER_AUTH_URL||'http://127.0.0.1:3000';
+test.afterAll(async()=>{await closeAIDatabase();await pool.end();});
 async function register(page:Page,email:string){
   await page.goto('/register');await page.getByLabel('称呼').fill('M03浏览器验收');await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-M03-passphrase-94!');
   await page.getByRole('button',{name:'创建账户'}).click();await expect(page.getByRole('status')).toContainText('注册请求已受理');
   let link='';for(let retry=0;retry<40&&!link;retry++){
-    for(const file of (await readdir('.runtime/mail')).sort().reverse()){const m=JSON.parse(await readFile(`.runtime/mail/${file}`,'utf8'));if(m.to.includes(email)){link=m.text.match(/http:\/\/127\.0\.0\.1:3000\/[^\s<>]+/)[0];break;}}
+    for(const file of (await readdir('.runtime/mail')).sort().reverse()){const m=JSON.parse(await readFile(`.runtime/mail/${file}`,'utf8'));if(m.to.includes(email)){link=m.text.match(/http:\/\/127\.0\.0\.1:\d+\/[^\s<>]+/)[0];break;}}
     if(!link)await new Promise(r=>setTimeout(r,250));
   }
   expect(link).not.toBe('');await page.goto(link);
@@ -16,7 +24,7 @@ test('M03 diagnoses, excludes helped answers, remediates with new questions, unl
   const student=`m03-${Date.now()}@example.test`,staff=`m03-review-${Date.now()}@example.test`;
   const local=JSON.parse(await readFile('.runtime/local-db.json','utf8'));
   const admin=new Pool({host:'127.0.0.1',port:54329,database:'learning_platform',user:'learning_admin',password:local.adminPassword});
-  const staffContext=await browser.newContext({baseURL:'http://127.0.0.1:3000'});const staffPage=await staffContext.newPage();
+  const staffContext=await browser.newContext({baseURL});const staffPage=await staffContext.newPage();
   try{
     await register(page,student);await page.setViewportSize({width:375,height:950});
     await page.getByRole('link',{name:'进入能力诊断'}).click();
@@ -29,7 +37,7 @@ test('M03 diagnoses, excludes helped answers, remediates with new questions, unl
     await expect(page).toHaveURL(/\/assessments\/session\/[0-9a-f-]+$/);
     const firstId=page.url().split('/').at(-1)!;
     const unexposed=await page.request.get(`/api/assessments/${firstId}`);expect(unexposed.status()).toBe(200);expect(JSON.stringify(await unexposed.json())).not.toContain('correctIndex');
-    const anon=await browser.newContext({baseURL:'http://127.0.0.1:3000'});expect((await anon.request.get(`/api/assessments/${firstId}`)).status()).toBe(401);await anon.close();
+    const anon=await browser.newContext({baseURL});expect((await anon.request.get(`/api/assessments/${firstId}`)).status()).toBe(401);await anon.close();
     await page.getByRole('button',{name:'查看答案 / 评分依据',exact:true}).first().click();await expect(page.getByRole('status')).toContainText('不计独立证据');await page.reload();await expect(page.getByRole('status')).toContainText('不计独立证据');
     for(const [family,choice] of [['energy','1'],['identity','0'],['reflection','2'],['satellite','1'],['orbit','0']])await page.locator(`input[name="light-${family}-1"][value="${choice}"]`).check();
     await admin.query('REVOKE UPDATE ON assessment_sessions FROM learning_app');
@@ -62,4 +70,35 @@ test('M03 diagnoses, excludes helped answers, remediates with new questions, unl
     await admin.query('DELETE FROM "user" WHERE email=ANY($1::text[])',[[student,staff]]);
     await staffContext.close();await admin.end();
   }
+});
+
+test('M03 AI learning shows honest status, preserves helped evidence and unlocks with fresh retest',async({page})=>{
+  const email=`m03-ai-ui-${Date.now()}@example.test`;await register(page,email);
+  const owner=(await pool.query('SELECT id FROM "user" WHERE email=$1',[email])).rows[0].id;
+  const course=randomUUID(),check=randomUUID();
+  try{
+    await withUserDatabase(owner,c=>c.query("INSERT INTO learning_courses(id,owner_id,submission_key,goal,schedule,status,material,sources,provenance,active_generation) VALUES($1,$2,$3,$4,'[]','ready',$5,$6,'real',$7)",[course,owner,randomUUID(),JSON.stringify({topic:'M03 AI浏览器模拟夹具'}),JSON.stringify(fixtureMaterial),JSON.stringify(astronomyPack.sources),randomUUID()]));
+    const id=await createCandidate(owner,course);
+    await page.goto(`/assessments/${id}`);await expect(page.getByRole('heading',{name:'题库等待核对'})).toBeVisible();
+    await page.getByRole('button',{name:'AI 核对题库',exact:true}).click();await expect(page.locator('.assessment-form [role="alert"]')).toContainText('硅基流动尚未配置');
+    const pack=structuredClone(astronomyPack);pack.title='M03 AI浏览器模拟夹具（无真实模型调用）';pack.questions=pack.questions.map(q=>q.type==='written'?{...q,type:'choice',options:['白矮星','行星','分子云'],correctIndex:0}:q);
+    await withUserDatabase(owner,c=>c.query("INSERT INTO assessment_ai_checks(id,owner_id,pack_id,course_version,budget_day,model_name,status,proposed_spec,accounted_fen) VALUES($1,$2,$3,'fixture','2020-01-01','fixture','queued',$4,20)",[check,owner,id,JSON.stringify(pack)]));
+    // Explicit backend fixture solely exercises the UI; it is not a real AI check or learner result.
+    await withAIDatabase(owner,async c=>{await c.query("UPDATE assessment_ai_checks SET status='completed',checked_spec=$2,accounted_fen=0,report=$3 WHERE id=$1",[check,JSON.stringify(pack),JSON.stringify({simulation:true})]);await c.query("UPDATE assessment_packs SET status='approved',approval_mode='ai',spec=$2 WHERE id=$1",[id,JSON.stringify(pack)]);});
+    await page.reload();await expect(page.getByText('AI 评估，待验证。题库已对照来源自动核对',{exact:false})).toBeVisible();await expect(page.locator('.page-heading')).not.toContainText('人工核对题库');
+    for(const width of [375,768,1024,1440]){await page.setViewportSize({width,height:950});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:`.runtime/m03-ai-${width}.png`,fullPage:true});}
+    await page.goto(`/assessments/${id}/life`);await expect(page.getByRole('heading',{name:'本课尚未解锁'})).toBeVisible();
+    await page.goto(`/assessments/${id}`);await page.getByRole('button',{name:'诊断基础',exact:true}).first().click();
+    await expect(page).toHaveURL(/\/assessments\/session\//);const firstURL=page.url();
+    await page.getByRole('button',{name:'查看提示',exact:true}).first().click();await expect(page.getByRole('status')).toContainText('不计独立证据');
+    await page.reload();await expect(page.getByRole('status')).toContainText('不计独立证据');
+    for(const q of pack.questions.filter(q=>q.skill==='light'&&q.id.endsWith('-1')))await page.locator(`input[name="${q.id}"][value="${q.correctIndex}"]`).check();
+    await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.getByText('证据尚未达标',{exact:true})).toBeVisible();
+    await page.getByRole('link',{name:'返回当前技能补习'}).click();await expect(page.getByRole('heading',{name:'针对性补习'})).toBeVisible();
+    await page.getByRole('button',{name:'独立考核 / 新题补测'}).click();
+    for(const q of pack.questions.filter(q=>q.skill==='light'&&q.id.endsWith('-2')))await page.locator(`input[name="${q.id}"][value="${q.correctIndex}"]`).check();
+    await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.getByText('达到初始通过门槛',{exact:true})).toBeVisible();const saved=page.url();await page.reload();await expect(page.getByRole('heading',{name:'结果已保存'})).toBeVisible();
+    await page.goto(`/assessments/${id}/life`);await expect(page.getByRole('heading',{name:'理解恒星的一生',exact:true})).toBeVisible();
+    await page.goto(saved);await page.setViewportSize({width:1440,height:950});await page.getByRole('button',{name:'退出登录'}).click();await page.goto('/login');await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-M03-passphrase-94!');await page.getByRole('button',{name:'登录并继续'}).click();await expect(page).toHaveURL(/\/today/);await page.goto(saved);await expect(page.getByRole('heading',{name:'结果已保存'})).toBeVisible();await page.goto(firstURL);await expect(page.getByText('使用帮助，不计独立证据',{exact:false})).toBeVisible();
+  }finally{await pool.query('DELETE FROM "user" WHERE id=$1',[owner]);}
 });

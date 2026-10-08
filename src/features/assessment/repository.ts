@@ -6,7 +6,7 @@ import {astronomyPack} from './catalog.ts';
 import {addReviewCards} from '../review/repository.ts';
 import {mastery,pickQuestions,questionKey,validatePack} from './domain.ts';
 import type {Pack,Question,Evidence} from './domain.ts';
-type PackRecord={id:string;spec:Pack;status:string;provenance:string};
+type PackRecord={id:string;spec:Pack;status:string;provenance:string;approval_mode?:string};
 type Feedback=Evidence&{id:string;prompt:string;chosen:string;explanation:string;sourceIds:string[]};
 type Progress=Record<string,ReturnType<typeof mastery>&{weak:string[];prerequisitesMissing:boolean}>;
 type Session={id:string;owner_id:string;pack_id:string;pack_version:number;skill_id:string;mode:string;state:string;questions:Question[];help:Record<string,{kind:string;text:string;at:string;events:{kind:string;at:string}[]}>;answers:Record<string,string>;feedback:Feedback[];expires_at:Date;created_at:Date};
@@ -14,10 +14,10 @@ async function lock(c:PoolClient,user:string){await c.query('SELECT pg_advisory_
 async function packIn(c:PoolClient,user:string,id:string):Promise<PackRecord|null>{
   if(id==='astronomy')return {id,spec:astronomyPack,status:'approved',provenance:'curated'};
   if(!validId(id))return null;
-  return (await c.query('SELECT id,spec,status,\'real\' AS provenance FROM assessment_packs WHERE id=$1 AND owner_id=$2',[id,user])).rows[0]??null;
+  return (await c.query('SELECT id,spec,status,approval_mode,\'real\' AS provenance FROM assessment_packs WHERE id=$1 AND owner_id=$2',[id,user])).rows[0]??null;
 }
 export async function getPack(user:string,id:string){return withUserDatabase(user,c=>packIn(c,user,id));}
-export async function listPacks(user:string){return withUserDatabase(user,async c=>[{id:'astronomy',spec:astronomyPack,status:'approved',provenance:'curated'},...(await c.query('SELECT id,spec,status,\'real\' AS provenance FROM assessment_packs WHERE owner_id=$1 ORDER BY created_at DESC',[user])).rows]);}
+export async function listPacks(user:string){return withUserDatabase(user,async c=>[{id:'astronomy',spec:astronomyPack,status:'approved',provenance:'curated',approval_mode:'curated'},...(await c.query('SELECT id,spec,status,approval_mode,\'real\' AS provenance FROM assessment_packs WHERE owner_id=$1 ORDER BY created_at DESC',[user])).rows]);}
 async function progressIn(c:PoolClient,user:string,pack:PackRecord):Promise<Progress>{
   const sessions=(await c.query<Session>('SELECT * FROM assessment_sessions WHERE owner_id=$1 AND pack_id=$2 AND pack_version=$3 AND state=\'submitted\' ORDER BY created_at,id',[user,pack.id,pack.spec.version])).rows;
   const reviews=(await c.query('SELECT r.* FROM assessment_reviews r JOIN assessment_sessions s ON s.id=r.session_id WHERE s.owner_id=$1 AND s.pack_id=$2 AND s.pack_version=$3',[user,pack.id,pack.spec.version])).rows;

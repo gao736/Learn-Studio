@@ -3,8 +3,9 @@ import {redirect} from 'next/navigation';
 import {revalidatePath} from 'next/cache';
 import {requireUser} from '../../server/session.ts';
 import {startAssessment,submitAssessment,requestHelp,requestReview,resolveReview,createCandidate,publishPack} from './repository.ts';
+import {requestAICheck} from './ai.ts';
 export type FormState={error:string;success?:string};
-function failure(error:unknown){return error instanceof Error&&/^(考核|复核|找不到)/.test(error.message)?error.message:'暂时无法保存，请稍后重试。当前输入保留。';}
+function failure(error:unknown){return error instanceof Error&&/^(考核|复核|找不到|硅基流动|模型预算)/.test(error.message)?error.message:'暂时无法保存，请稍后重试。当前输入保留。';}
 function refresh(){revalidatePath('/assessments','layout');revalidatePath('/today');}
 export async function startAction(_state:FormState,data:FormData){
   const user=await requireUser();let id:string;
@@ -41,4 +42,9 @@ export async function publishAction(_state:FormState,data:FormData){
   try{const text=String(data.get('spec'));if(text.length>200000)throw new Error('考核题库超过编辑大小限制。');await publishPack(user.id,String(data.get('pack_id')),JSON.parse(text),String(data.get('rationale')));}
   catch(e){return {error:e instanceof SyntaxError?'考核题库不是有效JSON。':failure(e)};}
   refresh();return {error:'',success:'题库版本与审核依据已保存。'};
+}
+export async function aiCheckAction(_state:FormState,data:FormData){
+  const user=await requireUser();
+  try{await requestAICheck(user.id,String(data.get('pack_id')));}catch(e){return {error:failure(e)};}
+  refresh();return {error:'',success:'AI核对任务已保存，可离开后回来查看。请刷新查看进度。'};
 }
