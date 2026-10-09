@@ -27,6 +27,8 @@ test('AI check fails closed on unsupported, missing, invented and mismatched evi
   const punctuation=structuredClone(report);for(const item of [...punctuation.skills,...punctuation.questions])item.quote="stars' gas is hot.";
   assert.doesNotThrow(()=>validateAIReport(pack,punctuation,sources.map(s=>({...s,text:'The stars’ gas is hot.'})),[]));
   for(const quote of ['            ','stars       ']){const empty=structuredClone(report);empty.questions[0].quote=quote;assert.throws(()=>validateAIReport(pack,empty,sources,[]),/考核/);}
+  const linkText=structuredClone(report);for(const item of [...linkText.skills,...linkText.questions])item.quote='a neutron star or a black hole.';
+  assert.doesNotThrow(()=>validateAIReport(pack,linkText,sources.map(s=>({...s,text:'either a neutron star or a black hole .'})),[]));
 });
 test('repeated families and pending review never manufacture mastery', () => {
   const repeated=Array.from({length:10},()=>({family:'same',correct:true,independent:true,pending:false}));

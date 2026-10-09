@@ -7,7 +7,7 @@ export type Evidence={family:string;correct:boolean|null;independent:boolean;pen
 export function validateAIReport(pack:Pack,raw:unknown,sources:{id:string;url:string;text:string}[],blocked:string[]){
   const r=raw as any;
   // Compare typography only; never fuzzy-match changed words or unsupported claims.
-  const quoted=(s:string)=>s.replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/\s+/g,' ');
+  const quoted=(s:string)=>s.replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/\s+/g,' ').replace(/\s+([.,!?;:，。！？；：])/g,'$1');
   if(!r||!Array.isArray(r.questions)||!Array.isArray(r.skills))throw new Error('考核AI报告不完整，题库未开放。');
   if(r.familiesValid!==true)throw new Error('考核题族或补测独立性未通过AI核对，题库未开放。');
   if(r.prerequisitesValid!==true)throw new Error('考核前置关系或教学正文未通过AI核对，题库未开放。');
