@@ -49,6 +49,13 @@ export async function reviseCourse(userId:string,id:string,expectedVersion:strin
     return version;
   });
 }
+export async function occupiedMinutes(c:PoolClient,user:string,excludeKey=''){
+ const rows=(await c.query<{schedule:DaySlot[]}>(`SELECT c.schedule FROM learning_courses c WHERE c.owner_id=$1 AND c.id::text<>$2 AND NOT EXISTS(SELECT 1 FROM study_plans p WHERE p.owner_id=$1 AND p.course_key=c.id::text)
+ UNION ALL SELECT p.payload->'days' AS schedule FROM study_plans p WHERE p.owner_id=$1 AND p.course_key<>$2`,[user,excludeKey])).rows;
+ const result=new Map<string,number>();
+ for(const row of rows)for(const day of row.schedule)result.set(day.date,(result.get(day.date)||0)+day.learn+day.practice+day.review);
+ return result;
+}
 export async function createCourse(userId:string, key:string, input:Record<string,unknown>) {
   if (!validId(key)) throw new Error('提交凭证无效，请刷新后重试。');
   const goal = validateGoal(input);
@@ -58,9 +65,7 @@ export async function createCourse(userId:string, key:string, input:Record<strin
     if (existing.rows[0]) return existing.rows[0];
     const count = await c.query("SELECT id FROM learning_courses WHERE owner_id=$1 AND created_day=(now() AT TIME ZONE 'Asia/Shanghai')::date",[userId]);
     if (count.rowCount) throw new Error('每天最多创建一个新课程；可继续或重试已保存的课程。');
-    const occupied = await c.query<{schedule:DaySlot[]}>('SELECT schedule FROM learning_courses WHERE owner_id=$1',[userId]);
-    const minutes = new Map<string,number>();
-    for (const row of occupied.rows) for (const day of row.schedule) minutes.set(day.date,(minutes.get(day.date)||0)+day.learn+day.practice+day.review);
+    const minutes = await occupiedMinutes(c,userId);
     const schedule = buildSchedule(goal).map(day => {
       const available = goal.dailyMinutes-(minutes.get(day.date)||0);
       if (available < 5) throw new Error('日期与已有主题的时间安排冲突，剩余时间不足5分钟。请选择其他日期或增加每日总时间预算。');

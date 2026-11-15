@@ -792,3 +792,5 @@ select:focus-visible { outline:3px solid var(--blue); outline-offset:4px; }
   .day-row { grid-template-columns:1fr; gap:8px; }
   .day-row .pill { justify-self:start; }
 }
+
+.study-day{padding:16px 0;border-top:1px solid #dbe3ee}.study-day ul{padding:0;list-style:none}.study-task{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:10px 0;overflow-wrap:anywhere}.study-task form{margin:0}
