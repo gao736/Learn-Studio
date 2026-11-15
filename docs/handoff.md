@@ -1,3 +1,5 @@
+> 2026-11-15 Learning Studio 网页 MVP：请先阅读 [使用与交付说明](studio-mvp-guide.md) 和 [当前进度](studio-mvp-progress.md)。以下旧模块记录保留作历史证据；支持范围以新说明为准。
+
 # 模块交付与持续进度
 
 ## 当前范围

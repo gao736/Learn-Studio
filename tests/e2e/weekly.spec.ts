@@ -1,4 +1,4 @@
-import {test,expect} from './fixtures';
+import {test,expect,submitRegistration} from './fixtures';
 import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {pool,withUserDatabase} from '../../src/server/db.ts';
@@ -11,7 +11,7 @@ test('weekly quiz saves feedback, previews and confirms one adjustment, and pres
  test.setTimeout(150000);const email='weekly-'+randomUUID()+'@example.test';
  try{
   await page.goto('/register');await page.getByLabel('称呼').fill('周测验收');await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-Weekly-passphrase-94!');
-  await page.getByRole('button',{name:'创建账户'}).click();await expect(page.getByRole('status')).toContainText('注册请求已受理');
+  await submitRegistration(page);
   let link='';for(let i=0;i<40&&!link;i++){for(const file of (await readdir('.runtime/mail')).sort().reverse()){const m=JSON.parse(await readFile('.runtime/mail/'+file,'utf8'));if(m.to.includes(email)){link=m.text.match(/http:\/\/127\.0\.0\.1:3000\/[^\s<>]+/)[0];break;}}if(!link)await new Promise(r=>setTimeout(r,250));}expect(link).not.toBe('');await page.goto(link);
   const user=(await pool.query('SELECT id FROM "user" WHERE email=$1',[email])).rows[0].id;
   const plan=await createStudyPlan(user,'astronomy',todayInShanghai()),s=await startAssessment(user,'astronomy','light','diagnosis');await submitAssessment(user,s.id,Object.fromEntries(s.questions.map(q=>[q.id,String(q.correctIndex)])));

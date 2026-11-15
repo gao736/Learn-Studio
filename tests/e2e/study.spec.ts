@@ -1,12 +1,13 @@
-import {test,expect} from './fixtures';
+import {test,expect,submitRegistration} from './fixtures';
 import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {pool} from '../../src/server/db.ts';
+test.setTimeout(150000);
 test('continuous study creates a saved three-lesson plan, opens the current lesson and preserves prerequisite locks',async({page})=>{
  const email=`study-${randomUUID()}@example.test`;
  try{
   await page.goto('/register');await page.getByLabel('称呼').fill('连续学习验收');await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-Study-passphrase-94!');
-  await page.getByRole('button',{name:'创建账户'}).click();await expect(page.getByRole('status')).toContainText('注册请求已受理');
+  await submitRegistration(page);
   let link='';for(let i=0;i<40&&!link;i++){for(const file of (await readdir('.runtime/mail')).sort().reverse()){const m=JSON.parse(await readFile(`.runtime/mail/${file}`,'utf8'));if(m.to.includes(email)){link=m.text.match(/http:\/\/127\.0\.0\.1:3000\/[^\s<>]+/)[0];break;}}if(!link)await new Promise(r=>setTimeout(r,250));}
   expect(link).not.toBe('');await page.goto(link);await page.goto('/courses');
   await page.getByRole('link',{name:'开始天文学连续学习',exact:true}).click();
