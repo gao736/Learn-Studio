@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 
 const globalDb = globalThis as typeof globalThis & { learningPool?: Pool };
-export const pool = globalDb.learningPool ?? new Pool({
+export const pool = (globalDb.learningPool && !globalDb.learningPool.ended ? globalDb.learningPool : undefined) ?? new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 5, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000,
 });

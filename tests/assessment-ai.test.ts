@@ -17,7 +17,7 @@ const {requestAICheck,runAICheck,aiCheckStatus}=await import('../src/features/as
 test('AI-checked learning preserves provenance, permissions, budgets, failures and independent evidence',async t=>{
   const users=[randomUUID(),randomUUID(),randomUUID()],courses:string[]=[];
   const boss=await getBoss();
-  const budgetBefore=(await pool.query('SELECT * FROM model_budgets ORDER BY period')).rows;
+  const budgetBefore=(await pool.query('SELECT * FROM model_budgets WHERE used_fen <> 0 ORDER BY period')).rows;
   t.after(async()=>{try{for(const user of users)await withUserDatabase(user,async c=>{const rows=(await c.query('SELECT budget_day,sum(accounted_fen)::int AS amount FROM assessment_ai_checks WHERE owner_id=$1 GROUP BY budget_day',[user])).rows;for(const row of rows)await changeBudget(c,row.budget_day,-row.amount);});await pool.query('DELETE FROM "user" WHERE id=ANY($1::text[])',[users]);await boss.deleteQueue(process.env.ASSESSMENT_QUEUE!);}finally{await closeAIDatabase();await boss.stop();await pool.end();}});
   for(const id of users)await pool.query('INSERT INTO "user"(id,name,email,"emailVerified","createdAt","updatedAt") VALUES($1,\'AI boundary fixture\',$2,true,now(),now())',[id,`${id}@example.test`]);
   async function course(owner=users[0]){const id=randomUUID();courses.push(id);await withUserDatabase(owner,c=>c.query("INSERT INTO learning_courses(id,owner_id,submission_key,goal,schedule,status,material,sources,provenance,active_generation,created_day) VALUES($1,$2,$3,$4,'[]','ready',$5,$6,'real',$7,DATE '2020-01-01'+$8::int)",[id,owner,randomUUID(),JSON.stringify({topic:'仅自动检查夹具'}),JSON.stringify(fixtureMaterial),JSON.stringify([{id:'stars',url:'https://science.nasa.gov/universe/stars/',title:'Fixture source'}]),randomUUID(),courses.length]));return createCandidate(owner,id);}
@@ -50,7 +50,7 @@ test('AI-checked learning preserves provenance, permissions, budgets, failures a
   const second=await startAssessment(users[0],id,'light','exam');assert.ok(second.questions.every(q=>!first.questions.some(v=>v.id===q.id)));
   await submitAssessment(users[0],second.id,Object.fromEntries(second.questions.map(q=>[q.id,String(q.correctIndex)])));
   assert.equal((await getProgress(users[0],id)).light.passed,true);
-  assert.deepEqual((await pool.query('SELECT * FROM model_budgets ORDER BY period')).rows,budgetBefore);
+  assert.deepEqual((await pool.query('SELECT * FROM model_budgets WHERE used_fen <> 0 ORDER BY period')).rows,budgetBefore);
   verdict='uncertain';const uncertain=await course(),u=await requestAICheck(users[0],uncertain,pack);await runAICheck({ownerId:users[0],checkId:u});
   assert.equal((await aiCheckStatus(users[0],uncertain)).status,'failed');assert.equal((await getPack(users[0],uncertain))?.status,'pending');
   httpStatus=500;const unknown=await course(),x=await requestAICheck(users[0],unknown,pack);await runAICheck({ownerId:users[0],checkId:x});

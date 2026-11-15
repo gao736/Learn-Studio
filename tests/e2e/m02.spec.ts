@@ -1,11 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { readdir,readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fixtureMaterial } from '../fixtures/course';
 import { Pool } from 'pg';
 import {reviseCourse} from '../../src/features/course/repository';
 import {pool} from '../../src/server/db';
-test.afterAll(async()=>{await pool.end();});
+
 
 test('M02 saves a custom plan, reports absent provider configuration, and teaches an explicitly simulated first lesson', async ({page,browser}) => {
   const email = `m02-${Date.now()}@example.test`;

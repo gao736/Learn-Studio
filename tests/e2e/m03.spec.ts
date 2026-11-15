@@ -1,19 +1,27 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 import type {Page} from '@playwright/test';
 import {readFile,readdir} from 'node:fs/promises';
 import {Pool} from 'pg';
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {pool,withUserDatabase} from '../../src/server/db.ts';
-import {withAIDatabase,closeAIDatabase} from '../../src/server/ai-db.ts';
+import {withAIDatabase} from '../../src/server/ai-db.ts';
 import {createCandidate} from '../../src/features/assessment/repository.ts';
 import {fixtureMaterial} from '../fixtures/course.ts';
 import {astronomyPack} from '../../src/features/assessment/catalog.ts';
 const baseURL=process.env.BETTER_AUTH_URL||'http://127.0.0.1:3000';
-test.afterAll(async()=>{await closeAIDatabase();await pool.end();});
+test.setTimeout(150000);
+
 async function register(page:Page,email:string){
   await page.goto('/register');await page.getByLabel('称呼').fill('M03浏览器验收');await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-M03-passphrase-94!');
-  await page.getByRole('button',{name:'创建账户'}).click();await expect(page.getByRole('status')).toContainText('注册请求已受理');
+  const response=page.waitForResponse(r=>r.url().includes('/api/auth/sign-up/email')&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'创建账户'}).click();const registration=await response;
+  if(registration.status()===429){
+    const retry=Number(registration.headers()['retry-after']||60);
+    await new Promise(resolve=>setTimeout(resolve,(Math.min(60,Math.max(1,Number.isFinite(retry)?retry:60))+1)*1000));
+    await page.getByRole('button',{name:'创建账户'}).click();
+  }
+  await expect(page.getByRole('status')).toContainText('注册请求已受理');
   let link='';for(let retry=0;retry<40&&!link;retry++){
     for(const file of (await readdir('.runtime/mail')).sort().reverse()){const m=JSON.parse(await readFile(`.runtime/mail/${file}`,'utf8'));if(m.to.includes(email)){link=m.text.match(/http:\/\/127\.0\.0\.1:\d+\/[^\s<>]+/)[0];break;}}
     if(!link)await new Promise(r=>setTimeout(r,250));
@@ -99,6 +107,6 @@ test('M03 AI learning shows honest status, preserves helped evidence and unlocks
     for(const q of pack.questions.filter(q=>q.skill==='light'&&q.id.endsWith('-2')))await page.locator(`input[name="${q.id}"][value="${q.correctIndex}"]`).check();
     await page.getByRole('button',{name:'提交独立作答'}).click();await expect(page.getByText('达到初始通过门槛',{exact:true})).toBeVisible();const saved=page.url();await page.reload();await expect(page.getByRole('heading',{name:'结果已保存'})).toBeVisible();
     await page.goto(`/assessments/${id}/life`);await expect(page.getByRole('heading',{name:'理解恒星的一生',exact:true})).toBeVisible();
-    await page.goto(saved);await page.setViewportSize({width:1440,height:950});await page.getByRole('button',{name:'退出登录'}).click();await page.goto('/login');await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-M03-passphrase-94!');await page.getByRole('button',{name:'登录并继续'}).click();await expect(page).toHaveURL(/\/today/);await page.goto(saved);await expect(page.getByRole('heading',{name:'结果已保存'})).toBeVisible();await page.goto(firstURL);await expect(page.getByText('使用帮助，不计独立证据',{exact:false})).toBeVisible();
+    await page.goto(saved);await page.setViewportSize({width:1440,height:950});await page.getByRole('button',{name:'退出登录'}).click();await expect(page).toHaveURL(/\/login(?:\?|$)/);await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill('Local-M03-passphrase-94!');await page.getByRole('button',{name:'登录并继续'}).click();await expect(page).toHaveURL(/\/today/);await page.goto(saved);await expect(page.getByRole('heading',{name:'结果已保存'})).toBeVisible();await page.goto(firstURL);await expect(page.getByText('使用帮助，不计独立证据',{exact:false})).toBeVisible();
   }finally{await pool.query('DELETE FROM "user" WHERE id=$1',[owner]);}
 });
