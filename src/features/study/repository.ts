@@ -69,3 +69,8 @@ export async function studyPlanHistory(user:string,id:string){
  if(!validId(id))return [];
  return withUserDatabase(user,async c=>(await c.query<{revision:number;reason:string;start_date:string;day_count:number}>("SELECT revision,reason,payload->>'startDate' AS start_date,jsonb_array_length(payload->'days') AS day_count FROM study_plan_versions WHERE owner_id=$1 AND plan_id=$2 ORDER BY revision DESC LIMIT 50",[user,id])).rows);
 }
+
+export async function studyPlanVersion(user:string,id:string,revision:number){
+ if(!validId(id)||!Number.isInteger(revision)||revision<0)return null;
+ return withUserDatabase(user,async c=>(await c.query<{revision:number;reason:string;payload:StudyPlan}>('SELECT revision,reason,payload FROM study_plan_versions WHERE owner_id=$1 AND plan_id=$2 AND revision=$3',[user,id,revision])).rows[0]??null);
+}

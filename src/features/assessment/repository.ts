@@ -11,14 +11,14 @@ type Feedback=Evidence&{id:string;prompt:string;chosen:string;explanation:string
 type Progress=Record<string,ReturnType<typeof mastery>&{weak:string[];prerequisitesMissing:boolean}>;
 type Session={id:string;owner_id:string;pack_id:string;pack_version:number;skill_id:string;mode:string;state:string;questions:Question[];help:Record<string,{kind:string;text:string;at:string;events:{kind:string;at:string}[]}>;answers:Record<string,string>;feedback:Feedback[];expires_at:Date;created_at:Date};
 async function lock(c:PoolClient,user:string){await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,2))',[user]);}
-async function packIn(c:PoolClient,user:string,id:string):Promise<PackRecord|null>{
+export async function packIn(c:PoolClient,user:string,id:string):Promise<PackRecord|null>{
   if(id==='astronomy')return {id,spec:astronomyPack,status:'approved',provenance:'curated'};
   if(!validId(id))return null;
   return (await c.query('SELECT id,spec,status,approval_mode,\'real\' AS provenance FROM assessment_packs WHERE id=$1 AND owner_id=$2',[id,user])).rows[0]??null;
 }
 export async function getPack(user:string,id:string){return withUserDatabase(user,c=>packIn(c,user,id));}
 export async function listPacks(user:string){return withUserDatabase(user,async c=>[{id:'astronomy',spec:astronomyPack,status:'approved',provenance:'curated',approval_mode:'curated'},...(await c.query('SELECT id,spec,status,approval_mode,\'real\' AS provenance FROM assessment_packs WHERE owner_id=$1 ORDER BY created_at DESC',[user])).rows]);}
-async function progressIn(c:PoolClient,user:string,pack:PackRecord):Promise<Progress>{
+export async function progressIn(c:PoolClient,user:string,pack:PackRecord):Promise<Progress>{
   const sessions=(await c.query<Session>('SELECT * FROM assessment_sessions WHERE owner_id=$1 AND pack_id=$2 AND pack_version=$3 AND state=\'submitted\' ORDER BY created_at,id',[user,pack.id,pack.spec.version])).rows;
   const reviews=(await c.query('SELECT r.* FROM assessment_reviews r JOIN assessment_sessions s ON s.id=r.session_id WHERE s.owner_id=$1 AND s.pack_id=$2 AND s.pack_version=$3',[user,pack.id,pack.spec.version])).rows;
   const progress:Progress=Object.fromEntries(pack.spec.skills.map(skill=>{
@@ -47,6 +47,11 @@ export async function getStudy(user:string,id:string,skill:string){return withUs
   const weak=progress[skill].weak;
   return {pack,skill:lesson,progress:progress[skill],remediation:pack.spec.questions.filter(q=>q.skill===skill&&weak.includes(q.family)).filter((q,i,all)=>all.findIndex(v=>v.family===q.family)===i).map(q=>({family:q.family,text:q.explanation,sourceIds:q.sourceIds}))};
 });}
+export async function usedQuestionKeys(c:PoolClient,user:string){
+ const rows=(await c.query<{questions:Question[]}>('SELECT questions FROM assessment_sessions WHERE owner_id=$1 UNION ALL SELECT questions FROM weekly_sessions WHERE owner_id=$1',[user])).rows;
+ const lessons=(await c.query<{feedback:{prompt:string}[]}>('SELECT feedback FROM lesson_attempts WHERE owner_id=$1',[user])).rows;
+ return [...rows.flatMap(s=>s.questions.map(questionKey)),...lessons.flatMap(s=>s.feedback.map(questionKey))];
+}
 export async function startAssessment(user:string,id:string,skill:string,mode:string){
   if(!['diagnosis','exam','skip'].includes(mode))throw new Error('考核方式无效。');
   return withUserDatabase(user,async c=>{
@@ -57,9 +62,7 @@ export async function startAssessment(user:string,id:string,skill:string,mode:st
     await c.query("UPDATE assessment_sessions SET state='expired' WHERE owner_id=$1 AND state='active' AND expires_at<=now()",[user]);
     const active=(await c.query<Session>("SELECT * FROM assessment_sessions WHERE owner_id=$1 AND pack_id=$2 AND pack_version=$3 AND skill_id=$4 AND state='active'",[user,id,pack.spec.version,skill])).rows[0];
     if(active)return active;
-    const used=(await c.query<{questions:Question[]}>('SELECT questions FROM assessment_sessions WHERE owner_id=$1',[user])).rows.flatMap(s=>s.questions.map(questionKey));
-    const oldFeedback=(await c.query<{feedback:{prompt:string}[]}>('SELECT feedback FROM lesson_attempts WHERE owner_id=$1',[user])).rows;
-    used.push(...oldFeedback.flatMap(s=>s.feedback.map(q=>questionKey(q as Question))));
+    const used=await usedQuestionKeys(c,user);
     const questions=pickQuestions(pack.spec,skill,used);
     if(questions.length!==5)throw new Error('考核新题不足五个不同题族，需补充题库；反复提交旧题不会增加证据。');
     return (await c.query<Session>('INSERT INTO assessment_sessions(id,owner_id,pack_id,pack_version,skill_id,mode,questions) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',[randomUUID(),user,id,pack.spec.version,skill,mode,JSON.stringify(questions)])).rows[0];
