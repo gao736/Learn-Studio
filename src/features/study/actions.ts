@@ -2,7 +2,7 @@
 import {redirect} from 'next/navigation';
 import {revalidatePath} from 'next/cache';
 import {requireUser} from '../../server/session.ts';
-import {createStudyPlan,startStudyTask} from './repository.ts';
+import {createStudyPlan,startStudyTask,adoptStudySource,completeRemedialTask} from './repository.ts';
 import {startWeekly,submitWeekly,confirmAdjustment,resumeStudy} from './weekly-repository.ts';
 export type StudyState={error:string};
 function message(error:unknown){return error instanceof Error&&/^(学习|后续|找不到|课程|时间|周测)/.test(error.message)?error.message:'学习计划暂时无法保存，请稍后重试；已有记录保留。';}
@@ -27,9 +27,16 @@ export async function submitWeeklyAction(_state:StudyState,data:FormData){
 }
 export async function confirmWeeklyAction(_state:StudyState,data:FormData){
  const user=await requireUser(),id=String(data.get('session_id')),plan=String(data.get('plan_id'));
- try{await confirmAdjustment(user.id,plan,id,Number(data.get('revision')));}catch(error){return {error:message(error)};}revalidatePath('/study/'+plan);revalidatePath('/today');redirect('/weekly/session/'+id);
+ try{await confirmAdjustment(user.id,plan,id,Number(data.get('revision')),String(data.get('proposal_token')));}catch(error){return {error:message(error)};}revalidatePath('/study/'+plan);revalidatePath('/today');redirect('/weekly/session/'+id);
 }
 export async function resumeStudyAction(_state:{error:string;saved?:boolean},data:FormData){
  const user=await requireUser(),id=String(data.get('plan_id'));try{await resumeStudy(user.id,id,String(data.get('start_date')),Number(data.get('revision')));}catch(error){return {error:message(error)};}
  revalidatePath('/study/'+id);revalidatePath('/today');return {error:'',saved:true};
+}
+
+export async function completeRemedialAction(_state:StudyState,data:FormData){
+ const user=await requireUser(),id=String(data.get('plan_id'));try{await completeRemedialTask(user.id,id,String(data.get('task_id')),Number(data.get('revision')));}catch(error){return {error:message(error)};}revalidatePath('/today');revalidatePath('/study/'+id);return {error:''};
+}
+export async function adoptStudySourceAction(_state:StudyState,data:FormData){
+ const user=await requireUser(),id=String(data.get('plan_id'));try{await adoptStudySource(user.id,id,Number(data.get('revision')),String(data.get('source_version')));}catch(error){return {error:message(error)};}revalidatePath('/today');revalidatePath('/study/'+id);redirect('/study/'+id);
 }

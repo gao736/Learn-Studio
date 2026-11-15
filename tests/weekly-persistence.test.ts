@@ -5,7 +5,7 @@ process.loadEnvFile('.env.local');
 const {pool,withUserDatabase}=await import('../src/server/db.ts');
 const {astronomyPack}=await import('../src/features/assessment/catalog.ts');
 const {startAssessment,submitAssessment,getProgress,usedQuestionKeys}=await import('../src/features/assessment/repository.ts');
-const {createStudyPlan,getStudyPlan,studyPlanHistory}=await import('../src/features/study/repository.ts');
+const {createStudyPlan,getStudyPlan,studyPlanHistory,startStudyTask,completeRemedialTask}=await import('../src/features/study/repository.ts');
 const {startWeekly,getWeekly,submitWeekly,previewAdjustment,confirmAdjustment,resumeStudy}=await import('../src/features/study/weekly-repository.ts');
 const {todayInShanghai}=await import('../src/features/course/domain.ts');
 const {questionKey}=await import('../src/features/assessment/domain.ts');
@@ -29,11 +29,19 @@ test('weekly results retire questions, isolate owners, never award mastery and c
  await submitWeekly(ids[0],id,answers);await submitWeekly(ids[0],id,answers);const receipt=await getWeekly(ids[0],id);assert.ok(receipt);assert.equal(receipt.feedback.filter(q=>q.correct).length,0);
  assert.deepEqual(await getProgress(ids[0],'astronomy'),progress);
  const preview=await previewAdjustment(ids[0],plan.id,id);assert.ok(preview.changes.length>0);assert.equal((await getStudyPlan(ids[0],plan.id))!.revision,0);
- await assert.rejects(confirmAdjustment(ids[0],plan.id,id,99),/版本/);await assert.rejects(confirmAdjustment(ids[1],plan.id,id,0),/找不到/);
- await confirmAdjustment(ids[0],plan.id,id,0);await confirmAdjustment(ids[0],plan.id,id,0);
+ await assert.rejects(confirmAdjustment(ids[0],plan.id,id,99,'old'),/版本/);await assert.rejects(confirmAdjustment(ids[1],plan.id,id,0,preview.token),/找不到/);
+ await assert.rejects(confirmAdjustment(ids[0],plan.id,id,0,'outdated-preview'),/建议/);
+ const tomorrow=Date.parse(todayInShanghai()+'T00:00:00Z')+86400000;
+ t.mock.timers.enable({apis:['Date'],now:tomorrow});try{await assert.rejects(confirmAdjustment(ids[0],plan.id,id,0,preview.token),/建议/);assert.equal((await getStudyPlan(ids[0],plan.id))!.revision,0);}finally{t.mock.timers.reset();}
+
+ await confirmAdjustment(ids[0],plan.id,id,0,preview.token);await confirmAdjustment(ids[0],plan.id,id,0,preview.token);
  const saved=(await getStudyPlan(ids[0],plan.id))!;assert.equal(saved.revision,1);assert.deepEqual(saved.payload.days[0],payload.days[0]);assert.equal((await studyPlanHistory(ids[0],plan.id)).length,2);
- const next=new Date(todayInShanghai()+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+3);await resumeStudy(ids[0],plan.id,next.toISOString().slice(0,10),1);
- assert.equal((await getStudyPlan(ids[0],plan.id))!.revision,2);assert.deepEqual(await getProgress(ids[0],'astronomy'),progress);
+ const remedial=saved.payload.days.flatMap(d=>d.tasks).find(t=>t.kind==='remedial')!;
+ await assert.rejects(completeRemedialTask(ids[0],plan.id,remedial.id,1),/先开始/);await startStudyTask(ids[0],plan.id,remedial.id,1);
+ await assert.rejects(completeRemedialTask(ids[1],plan.id,remedial.id,2),/找不到/);await completeRemedialTask(ids[0],plan.id,remedial.id,2);await completeRemedialTask(ids[0],plan.id,remedial.id,2);
+ assert.equal((await getStudyPlan(ids[0],plan.id))!.revision,3);assert.deepEqual(await getProgress(ids[0],'astronomy'),progress);
+ const next=new Date(todayInShanghai()+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+3);await resumeStudy(ids[0],plan.id,next.toISOString().slice(0,10),3);
+ assert.equal((await getStudyPlan(ids[0],plan.id))!.revision,4);assert.deepEqual(await getProgress(ids[0],'astronomy'),progress);
  const oldStart=new Date(todayInShanghai()+'T00:00:00Z');oldStart.setUTCDate(oldStart.getUTCDate()-20);
  await withUserDatabase(ids[0],c=>c.query("UPDATE study_plans SET payload=jsonb_set(payload,'{startDate}',to_jsonb($2::text)) WHERE id=$1",[plan.id,oldStart.toISOString().slice(0,10)]));
  const last=await startWeekly(ids[0],plan.id);await withUserDatabase(ids[0],c=>c.query("UPDATE weekly_sessions SET state='expired' WHERE id=$1",[last]));

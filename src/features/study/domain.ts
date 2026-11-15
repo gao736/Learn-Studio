@@ -1,7 +1,7 @@
 import {buildSchedule} from '../course/domain.ts';
 import type {Goal,DaySlot} from '../course/domain.ts';
 export type StudyUnit={key:string;title:string;href:string;skillId?:string};
-export type StudyTask={id:string;kind:'learn'|'practice'|'review'|'weekly'|'remedial';unitKey?:string;title:string;minutes:number;state:'pending'|'started'};
+export type StudyTask={id:string;kind:'learn'|'practice'|'review'|'weekly'|'remedial';unitKey?:string;title:string;minutes:number;state:'pending'|'started'|'completed'};
 export type StudyDay=DaySlot&{tasks:StudyTask[]};
 export type StudyPlan={startDate:string;units:StudyUnit[];days:StudyDay[]};
 export function buildStudyPlan(goal:Goal,slots:DaySlot[],units:StudyUnit[],startDate:string,occupied=new Map<string,number>()):StudyPlan{
@@ -29,4 +29,8 @@ export function startTask(plan:StudyPlan,id:string,allowed:string[]):StudyPlan{
  if(!task)throw new Error('学习任务不存在。');
  if(task.unitKey&&!allowed.includes(task.unitKey))throw new Error('学习前置证据尚未通过。');
  return {...plan,days:plan.days.map(d=>({...d,tasks:d.tasks.map(t=>t.id===id?{...t,state:'started' as const}:t)}))};
+}
+
+export function compatibleSourceVersions(before:string,after:string){
+ const valid=/^real:[0-9a-f-]{36}(?::r[0-9]+)?$/i;return valid.test(before)&&valid.test(after)&&before.replace(/:r[0-9]+$/,'')===after.replace(/:r[0-9]+$/,'');
 }

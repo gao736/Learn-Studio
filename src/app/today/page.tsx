@@ -14,7 +14,7 @@ export default async function Today(){
  const plan=plans[0];let source:Awaited<ReturnType<typeof getStudySource>>|undefined,sourceError=false;
  if(plan)try{source=await getStudySource(user.id,plan.course_key);}catch{sourceError=true;}
  const compatible=plan&&source&&plan.source_version===source.version&&plan.pack_version===source.packVersion;
- const next=plan?.payload.days.flatMap(d=>d.tasks).find(t=>(t.kind==='learn'&&!source?.doneKeys.includes(t.unitKey||''))||(t.kind==='remedial'&&t.state==='pending'));
+ const next=plan?.payload.days.flatMap(d=>d.tasks).find(t=>(t.kind==='learn'&&!source?.doneKeys.includes(t.unitKey||''))||(t.kind==='remedial'&&t.state!=='completed'));
  const weekly=plan?(await weeklyHistory(user.id,plan.id)).find(s=>s.state==='active'):undefined;
  const course=courses[0];
  return <AppShell user={user} active="/today"><div className="topline"><span className="breadcrumb">你的学习空间</span><span className="status-badge">进度与结果持续保存</span></div><header className="page-heading"><p className="eyebrow">TODAY'S LEARNING</p><h1>{plan||course?'今天，从下一步开始。':'今天，认识我们的星空。'}</h1><p>{user.name}，按可投入的时间学习，用作答记录检查理解。</p></header><div className="two-col"><div className="side-stack">

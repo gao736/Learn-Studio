@@ -2,9 +2,9 @@ import {randomUUID} from 'node:crypto';
 import {withUserDatabase} from '../../server/db.ts';
 import {getCourse,occupiedMinutes} from '../course/repository.ts';
 import {buildSchedule,courseVersion,todayInShanghai,validId} from '../course/domain.ts';
-import {getProgress} from '../assessment/repository.ts';
+import {getProgress,packIn} from '../assessment/repository.ts';
 import {astronomyPack} from '../assessment/catalog.ts';
-import {buildStudyPlan,startTask} from './domain.ts';
+import {buildStudyPlan,startTask,compatibleSourceVersions} from './domain.ts';
 import type {StudyPlan,StudyUnit} from './domain.ts';
 import type {Pack} from '../assessment/domain.ts';
 export type StudyRow={id:string;owner_id:string;course_key:string;pack_id:string;pack_version:number;source_version:string;revision:number;payload:StudyPlan};
@@ -73,4 +73,32 @@ export async function studyPlanHistory(user:string,id:string){
 export async function studyPlanVersion(user:string,id:string,revision:number){
  if(!validId(id)||!Number.isInteger(revision)||revision<0)return null;
  return withUserDatabase(user,async c=>(await c.query<{revision:number;reason:string;payload:StudyPlan}>('SELECT revision,reason,payload FROM study_plan_versions WHERE owner_id=$1 AND plan_id=$2 AND revision=$3',[user,id,revision])).rows[0]??null);
+}
+
+export async function completeRemedialTask(user:string,id:string,taskId:string,expected:number){
+ if(!validId(id)||typeof taskId!=='string'||taskId.length>120)throw new Error('学习任务凭证无效。');
+ return withUserDatabase(user,async c=>{
+  await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1))',[user]);
+  const row=(await c.query<StudyRow>('SELECT * FROM study_plans WHERE id=$1 AND owner_id=$2 FOR UPDATE',[id,user])).rows[0];if(!row)throw new Error('找不到这个学习计划。');
+  const payload=structuredClone(row.payload),task=payload.days.flatMap(d=>d.tasks).find(t=>t.id===taskId);
+  if(!task||task.kind!=='remedial'||task.state==='pending')throw new Error('学习补习需要先开始阅读，完成标记不增加掌握证据。');if(task.state==='completed')return;
+  if(!Number.isInteger(expected)||row.revision!==expected)throw new Error('学习计划版本已变化，请刷新后继续。');task.state='completed';const revision=row.revision+1;
+  await c.query('UPDATE study_plans SET revision=$2,payload=$3,updated_at=now() WHERE id=$1',[id,revision,JSON.stringify(payload)]);
+  await c.query('INSERT INTO study_plan_versions(plan_id,owner_id,revision,payload,reason) VALUES($1,$2,$3,$4,$5)',[id,user,revision,JSON.stringify(payload),'本人确认补习阅读完成，不增加独立考核证据']);
+ });
+}
+export async function adoptStudySource(user:string,id:string,expected:number,version:string){
+ const initial=await getStudyPlan(user,id);if(!initial)throw new Error('找不到这个学习计划。');const source=await getStudySource(user,initial.course_key);
+ return withUserDatabase(user,async c=>{
+  await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1))',[user]);await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,2))',[user]);
+  const row=(await c.query<StudyRow>('SELECT * FROM study_plans WHERE id=$1 AND owner_id=$2 FOR UPDATE',[id,user])).rows[0];if(!row)throw new Error('找不到这个学习计划。');
+  if(!Number.isInteger(expected)||row.revision!==expected||version!==source.version)throw new Error('课程或计划版本已变化，请刷新后重新核对。');if(row.source_version===version)return;
+  const course=(await c.query('SELECT * FROM learning_courses WHERE id::text=$1 AND owner_id=$2',[row.course_key,user])).rows[0],pack=await packIn(c,user,row.pack_id);
+  const old=(await c.query('SELECT material FROM course_material_versions WHERE course_id::text=$1 AND owner_id=$2 AND version=$3',[row.course_key,user,row.source_version])).rows[0];
+  const sameUnits=JSON.stringify(row.payload.units.map(({key,href,skillId})=>({key,href,skillId})))===JSON.stringify(source.units.map(({key,href,skillId})=>({key,href,skillId})));
+  const signature=(m:any)=>[m.title,m.scope,m.weeklyTopics,m.lesson.title,m.lesson.outcome,m.lesson.practice,m.lesson.questions.map(({id,options,correctIndex,sourceIds}:any)=>({id,options,correctIndex,sourceIds}))];
+  if(!course||course.status!=='ready'||courseVersion(course)!==version||!compatibleSourceVersions(row.source_version,version)||!pack||pack.status!=='approved'||pack.spec.version!==row.pack_version||source.packId!==row.pack_id||source.packVersion!==row.pack_version||!sameUnits||!old?.material||JSON.stringify(signature(old.material))!==JSON.stringify(signature(course.material)))throw new Error('课程修订不兼容，请保留原计划并核对范围、题库或评分规则。');
+  const revision=row.revision+1;await c.query('UPDATE study_plans SET source_version=$2,revision=$3,updated_at=now() WHERE id=$1',[id,version,revision]);
+  await c.query('INSERT INTO study_plan_versions(plan_id,owner_id,revision,payload,reason) VALUES($1,$2,$3,$4,$5)',[id,user,revision,JSON.stringify(row.payload),'确认兼容正文修订：'+row.source_version+' → '+version]);
+ });
 }

@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {questionKey} from '../assessment/domain.ts';
 import type {Pack,Question} from '../assessment/domain.ts';
 import type {StudyPlan,StudyDay} from './domain.ts';
@@ -30,7 +31,7 @@ export function resumeStudyPlan(plan:StudyPlan,start:string,done:string[],occupi
  const ensure=(date:string,original:StudyDay)=>{if(!days.has(date)){const day=Math.floor((dateValue(date)-dateValue(plan.startDate))/86400000)+1;days.set(date,{...original,date,month:date.slice(0,7),day,week:Math.max(1,Math.ceil(day/7)),tasks:[]});}return days.get(date)!;};
  let offset=0;
  for(const day of plan.days){
-  const protectedTasks=day.tasks.filter(t=>t.state==='started'||(t.kind==='learn'&&done.includes(t.unitKey||'')));
+  const protectedTasks=day.tasks.filter(t=>t.state==='started'||t.state==='completed'||(t.kind==='learn'&&done.includes(t.unitKey||'')));
   if(protectedTasks.length)ensure(day.date,day).tasks.push(...structuredClone(protectedTasks));
   const pending=day.tasks.filter(t=>!protectedTasks.includes(t));if(!pending.length)continue;
   const date=new Date(startValue+offset++*86400000).toISOString().slice(0,10);ensure(date,day).tasks.push(...structuredClone(pending));
@@ -38,3 +39,5 @@ export function resumeStudyPlan(plan:StudyPlan,start:string,done:string[],occupi
  for(const day of days.values())if(day.tasks.reduce((n,t)=>n+t.minutes,0)+(occupied.get(day.date)||0)>budget)throw new Error('学习恢复与其他任务的时间冲突，请选择其他日期。');
  return {...plan,units:structuredClone(plan.units),days:[...days.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(allocate)};
 }
+
+export function adjustmentToken(revision:number,date:string,changes:ReturnType<typeof adjustStudyPlan>['changes']){return createHash('sha256').update(JSON.stringify({revision,date,changes})).digest('hex');}

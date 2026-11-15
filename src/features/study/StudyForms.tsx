@@ -1,6 +1,6 @@
 'use client';
 import {useActionState,useEffect,useRef} from 'react';
-import {createStudyAction,startStudyAction,startWeeklyAction,submitWeeklyAction,confirmWeeklyAction,resumeStudyAction} from './actions';
+import {createStudyAction,startStudyAction,startWeeklyAction,submitWeeklyAction,confirmWeeklyAction,resumeStudyAction,adoptStudySourceAction,completeRemedialAction} from './actions';
 function ErrorMessage({text}:{text:string}){
  const ref=useRef<HTMLDivElement>(null);useEffect(()=>{if(text)ref.current?.focus();},[text]);
  return text?<div className="alert" role="alert" ref={ref} tabIndex={-1}>{text}</div>:null;
@@ -14,9 +14,9 @@ export function StartStudyForm({planId,taskId,revision,label='开始学习',disa
  return <form action={action}><input type="hidden" name="plan_id" value={planId}/><input type="hidden" name="task_id" value={taskId}/><input type="hidden" name="revision" value={revision}/><ErrorMessage text={state.error}/><button className="button" disabled={disabled||pending}>{pending?'正在保存…':label}</button></form>;
 }
 
-export function WeeklyControl({planId,sessionId,revision}:{planId:string;sessionId?:string;revision?:number}){
+export function WeeklyControl({planId,sessionId,revision,token}:{planId:string;sessionId?:string;revision?:number;token?:string}){
  const [state,action,pending]=useActionState(sessionId?confirmWeeklyAction:startWeeklyAction,{error:''});
- return <form action={action}><input type="hidden" name="plan_id" value={planId}/>{sessionId&&<><input type="hidden" name="session_id" value={sessionId}/><input type="hidden" name="revision" value={revision}/></>}<ErrorMessage text={state.error}/><button className="button" disabled={pending}>{pending?'正在保存…':sessionId?'确认调整后续安排':'开始或继续本周测验'}</button></form>;
+ return <form action={action}><input type="hidden" name="plan_id" value={planId}/>{sessionId&&<><input type="hidden" name="session_id" value={sessionId}/><input type="hidden" name="revision" value={revision}/><input type="hidden" name="proposal_token" value={token}/></>}<ErrorMessage text={state.error}/><button className="button" disabled={pending}>{pending?'正在保存…':sessionId?'确认调整后续安排':'开始或继续本周测验'}</button></form>;
 }
 export function WeeklyQuiz({id,questions}:{id:string;questions:{id:string;prompt:string;options:string[]}[]}){
  const [state,action,pending]=useActionState(submitWeeklyAction,{error:''});
@@ -25,4 +25,11 @@ export function WeeklyQuiz({id,questions}:{id:string;questions:{id:string;prompt
 export function ResumeStudyForm({planId,revision,today}:{planId:string;revision:number;today:string}){
  const [state,action,pending]=useActionState(resumeStudyAction,{error:'',saved:false});
  return <form className="goal-form" action={action} onReset={e=>e.preventDefault()}><input type="hidden" name="plan_id" value={planId}/><input type="hidden" name="revision" value={revision}/><ErrorMessage text={state.error}/>{state.saved&&<p className="hint-box" role="status">恢复安排已保存，可在下方查看新版本。</p>}<label htmlFor="resume-date">恢复学习日期</label><input id="resume-date" name="start_date" type="date" required min={today} defaultValue={today} disabled={pending}/><p className="note">从所选日期重新安排剩余任务。已开始的任务、已完成的学习、成绩和FSRS日期保留；时间冲突时会停止保存。</p><button className="button" disabled={pending}>{pending?'正在保存…':'确认恢复未开始的安排'}</button></form>;
+}
+
+export function CompleteRemedialForm({planId,taskId,revision}:{planId:string;taskId:string;revision:number}){
+ const [state,action,pending]=useActionState(completeRemedialAction,{error:''});return <form action={action}><input type="hidden" name="plan_id" value={planId}/><input type="hidden" name="task_id" value={taskId}/><input type="hidden" name="revision" value={revision}/><ErrorMessage text={state.error}/><button className="button secondary" disabled={pending}>{pending?'正在保存…':'完成本次补习阅读'}</button></form>;
+}
+export function AdoptSourceForm({planId,revision,version}:{planId:string;revision:number;version:string}){
+ const [state,action,pending]=useActionState(adoptStudySourceAction,{error:''});return <form action={action}><input type="hidden" name="plan_id" value={planId}/><input type="hidden" name="revision" value={revision}/><input type="hidden" name="source_version" value={version}/><p>正文有修订。确认后仅采用兼容修订，保留计划、题库、成绩、已开始任务及复习日期；范围或评分规则不一致时会停止。</p><ErrorMessage text={state.error}/><button className="button" disabled={pending}>{pending?'正在保存…':'确认采用兼容正文修订'}</button></form>;
 }
