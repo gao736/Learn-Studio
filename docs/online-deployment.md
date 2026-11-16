@@ -50,3 +50,12 @@ Render连接尚待确认；GitHub目标已配置为gao736/Learn-Studio，推送�
 - https://render.com/docs/node-version
 - https://render.com/docs/free
 - https://render.com/pricing
+
+## 2026-11-16 最新接续：预算改为零
+
+- GitHub已推送并核对：gao736/Learn-Studio 的 main 与本地77cbe04一致，工作区干净；目标仓库保持私有。
+- 用户确认Render账号连接，提供了已登录控制台截图。不再重复要求账号注册或邮箱验证。
+- 当前会话未暴露Render操作工具；按官方技能改用Render CLI。官方v2.36.0 Windows AMD64下载包SHA256已与GitHub官方发布摘要核对，工具仅在忽略的.runtime中。CLI登录授权尚未完成；用户提出不付费后已取消等待登录的进程，没有创建云资源。
+- 新约束：不付费。此前的三项付费资源方案停止，不创建付费Web/worker/Postgres，也未产生此类费用。
+- 已解释两个免费方向，等待选择：独立静态演示版（预置课程、核心交互、无真实AI后台）或尝试保留完整版的免费额度部署（需要适配并接受限制）。不得在未获选择前把完整产品静默替换为演示版。
+- 原本机完整版、账户、课程、作答、复习排期和已有Git历史均保留。目前没有已部署的面试网址。
