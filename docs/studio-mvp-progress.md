@@ -67,3 +67,12 @@ Deliverable: docs/studio-mvp-guide.md has scope, routes, startup, queue check, b
 Prepared hosted startup binding0.0.0.0 with platformPORT and pinned Node24.16.0; explicit BETTER_AUTH_URL remains authoritative, Render HTTPS URL is fallback. Regression RED reproduced localhost fallback, then GREEN verifies all origins; types passed and full core44/44. Reachable existing history335 blobs scanned against configured secrets and private-key patterns:0 credential matches,0 forbidden tracked runtime/env/database paths. Pending: production build, commit and authenticated GitHub push, Render connection, paid-plan review, new isolated cloud DB and role/migration setup, actual deployment and public-URL acceptance.
 
 2026-11-16 GitHub/public URL continuation: private remote gao736/Learn-Studio main pushed successfully and matched77cbe04. Latest pre-push audit:145 tracked files,341 reachable blobs,0 configured credentials/private-key matches,0 private runtime/env/database paths. User confirmed Render connection and supplied logged-in Dashboard. No Render MCP operations are exposed in this session, so official CLI2.36.0 was downloaded and SHA256 verified; whoami requires independent CLI login. Login was awaiting manual authorization, then canceled when user changed budget to zero. No cloud resources or charges created. Paid deployment is stopped; scope choice pending between a clearly labelled free static interview demo and attempting full feature deployment within free-tier constraints. Preserve local MVP and avoid silently downgrading it.
+
+## 2026-11-16 面试源码公开交付
+
+- 保留原 Learning Studio 网页 MVP、历史提交、本机账户、课程、作答和复习排期；本轮只更新文档，没有修改业务代码、重新初始化数据库或新增模型调用。
+- README 新增面试阅读入口：实际功能与边界、技术实现、代码阅读顺序、环境要求和历史验证证据；旧 README 原文保留在折叠区。10 个新增本地链接已检查，Git diff --check 通过。
+- 公开前检查覆盖145个跟踪文件及343个可达历史文件对象：没有匹配已配置密钥或私钥模式，没有禁止的运行/数据库路径；邮箱样式命中已复核为依赖、占位符或测试数据，无未复核项。摘要仅在忽略的.runtime目录。此检查不是完整安全审计。
+- 面试 README 提交03ebaa0已推送，远端main与本地SHA一致。随后用户明确授权改为Public，GitHub官方API确认gao736/Learn-Studio为public；无登录仓库元数据与raw README请求均为HTTP200，并确认最新面试说明存在。
+- 可交付源码地址：https://github.com/gao736/Learn-Studio 。这不是在线应用地址。尚未部署公网完整版，没有创建云资源或费用；免费部署仍从数据库、邮件与后台任务适配处继续。
+- 本轮为文档与仓库可见性发布，仅检查文档、敏感内容、推送和匿名访问，未重跑核心/浏览器/构建套件；README中的既有检查结果均标注原日期。
